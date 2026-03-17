@@ -76,6 +76,43 @@ def get_scan_entities(scan_id: str):
     return {"nodes": nodes, "edges": edges}
 
 
+@router.get("/{scan_id}/diagrams/{perspective}/data")
+def get_diagram_data(scan_id: str, perspective: str):
+    """Return perspective-filtered entities and relationships as graph data."""
+    if perspective not in PERSPECTIVES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid perspective. Must be one of: {', '.join(PERSPECTIVES)}",
+        )
+    state = orchestrator.get_scan(scan_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    dd = state.diagram_data.get(perspective)
+    if dd is None:
+        return {"nodes": [], "edges": []}
+
+    nodes = [
+        {
+            "id": e.id,
+            "label": e.name,
+            "type": "CodeEntity",
+            "properties": {"entity_type": e.entity_type, "file_path": e.file_path},
+        }
+        for e in dd.entities
+    ]
+    edges = [
+        {
+            "source": r.source_id,
+            "target": r.target_id,
+            "type": r.relationship_type,
+            "properties": {},
+        }
+        for r in dd.relationships
+    ]
+    return {"nodes": nodes, "edges": edges}
+
+
 @router.get("/{scan_id}/diagrams/{perspective}", response_model=DiagramResponse)
 def get_diagram(scan_id: str, perspective: str) -> DiagramResponse:
     if perspective not in PERSPECTIVES:

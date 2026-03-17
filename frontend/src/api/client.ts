@@ -157,6 +157,11 @@ export const api = {
   getScanEntities: (scanId: string) =>
     request<KnowledgeGraphResponse>(`/scan/${scanId}/entities`),
 
+  getDiagramData: (scanId: string, perspective: string) =>
+    request<KnowledgeGraphResponse>(
+      `/scan/${scanId}/diagrams/${perspective}/data`
+    ),
+
   listTemplates: () => request<TemplateResponse[]>("/templates"),
 
   createTemplate: (req: TemplateCreateRequest) =>
