@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import FlowGraph from "../components/FlowGraph";
@@ -12,17 +12,26 @@ export default function KnowledgeGraphPage() {
     queryFn: api.getGraphStatus,
   });
 
-  const { data: graphData, isLoading } = useQuery({
-    queryKey: ["knowledge-graph", scanId],
-    queryFn: () => api.getKnowledgeGraph(scanId || undefined),
-  });
-
   const { data: scans } = useQuery({
     queryKey: ["scans"],
     queryFn: api.listScans,
   });
 
-  // Apply search filter before passing to FlowGraph
+  // Auto-select the most recent scan
+  useEffect(() => {
+    if (!scanId && scans && scans.length > 0) {
+      setScanId(scans[0].scan_id);
+    }
+  }, [scans, scanId]);
+
+  // Only fetch when we have a scan selected
+  const { data: graphData, isLoading } = useQuery({
+    queryKey: ["knowledge-graph", scanId],
+    queryFn: () => api.getKnowledgeGraph(scanId),
+    enabled: !!scanId,
+  });
+
+  // Search filter
   const filteredNodes = useMemo(() => {
     if (!graphData) return [];
     if (!searchTerm) return graphData.nodes;
@@ -38,12 +47,14 @@ export default function KnowledgeGraphPage() {
     return graphData.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
   }, [graphData, filteredNodes]);
 
-  // Empty state
-  if (
-    !isLoading &&
-    (!graphData || graphData.nodes.length === 0) &&
-    (!status || !status.available)
-  ) {
+  // Current scan info
+  const currentScan = scans?.find((s) => s.scan_id === scanId);
+  const repoName = currentScan
+    ? currentScan.repo_url.replace(/\.git$/, "").split("/").slice(-2).join("/")
+    : "";
+
+  // Empty state — no scans at all
+  if (!scans || scans.length === 0) {
     return (
       <div className="max-w-3xl mx-auto">
         <h1 className="text-xl font-semibold text-stone-900 tracking-tight mb-6">
@@ -52,14 +63,11 @@ export default function KnowledgeGraphPage() {
         <div className="bg-white border border-stone-200 rounded-xl p-8 text-center">
           <div className="text-3xl mb-3 text-stone-300">{"\u2B21"}</div>
           <p className="text-stone-600 text-sm mb-2">
-            No graph data yet. Scan a repository to visualize its code entities
-            and relationships.
+            No scans yet. Scan a repository from the Dashboard to visualize its
+            code entities and relationships.
           </p>
           <p className="text-stone-400 text-xs">
-            For persistent graph storage, run{" "}
-            <code className="bg-stone-100 px-1 rounded">
-              docker run -p 6379:6379 falkordb/falkordb
-            </code>
+            Each scan produces its own isolated knowledge graph.
           </p>
         </div>
       </div>
@@ -70,13 +78,25 @@ export default function KnowledgeGraphPage() {
     <div className="flex flex-col" style={{ height: "calc(100vh - 100px)" }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3 flex-shrink-0">
-        <h1 className="text-xl font-semibold text-stone-900 tracking-tight">
-          Knowledge Graph
-        </h1>
+        <div>
+          <h1 className="text-xl font-semibold text-stone-900 tracking-tight">
+            Knowledge Graph
+          </h1>
+          {repoName && (
+            <p className="text-xs text-stone-400 mt-0.5">
+              {repoName}
+              {currentScan && (
+                <span className="ml-1 text-stone-300">
+                  ({currentScan.branch})
+                </span>
+              )}
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-3 text-xs text-stone-400">
           {status && (
             <span className={status.available ? "text-emerald-600" : "text-stone-400"}>
-              {status.available ? "FalkorDB connected" : "In-memory mode"}
+              {status.available ? "FalkorDB" : "In-memory"}
             </span>
           )}
         </div>
@@ -85,6 +105,26 @@ export default function KnowledgeGraphPage() {
       {/* Controls */}
       <div className="bg-white border border-stone-200 rounded-xl p-3 mb-3 flex-shrink-0">
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-stone-400 whitespace-nowrap">Repository:</label>
+            <select
+              value={scanId}
+              onChange={(e) => {
+                setScanId(e.target.value);
+                setSearchTerm("");
+              }}
+              className="border border-stone-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-stone-400 focus:outline-none"
+            >
+              {scans.map((s) => {
+                const name = s.repo_url.replace(/\.git$/, "").split("/").pop();
+                return (
+                  <option key={s.scan_id} value={s.scan_id}>
+                    {name} ({s.branch})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
           <input
             type="text"
             placeholder="Search nodes..."
@@ -92,18 +132,6 @@ export default function KnowledgeGraphPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="border border-stone-300 rounded-lg px-3 py-1.5 text-sm w-48 focus:ring-2 focus:ring-stone-400 focus:outline-none"
           />
-          <select
-            value={scanId}
-            onChange={(e) => setScanId(e.target.value)}
-            className="border border-stone-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-stone-400 focus:outline-none"
-          >
-            <option value="">All scans</option>
-            {scans?.map((s) => (
-              <option key={s.scan_id} value={s.scan_id}>
-                {s.repo_url.split("/").pop()} ({s.branch})
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 
@@ -112,13 +140,13 @@ export default function KnowledgeGraphPage() {
         <FlowGraph
           nodes={filteredNodes}
           edges={filteredEdges}
-          isLoading={isLoading}
+          isLoading={isLoading || !scanId}
           height="100%"
           maxNodes={300}
           direction="RIGHT"
           showDirectionToggle={true}
           showMiniMap={true}
-          emptyMessage="No graph data available. Scan a repository to populate the knowledge graph."
+          emptyMessage="No entities found for this scan."
         />
       </div>
     </div>

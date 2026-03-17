@@ -400,29 +400,17 @@ class GraphService:
 
     # --- Knowledge graph visualization ---
 
-    def get_knowledge_graph(self, scan_id: str | None = None) -> dict:
-        """Returns {nodes, edges} for visualization. Caps at 500 nodes."""
+    def get_knowledge_graph(self, scan_id: str) -> dict:
+        """Returns {nodes, edges} for a specific scan. Caps at 500 nodes."""
         if not self._available:
             return {"nodes": [], "edges": []}
 
-        if scan_id:
-            node_result = self._query(
-                "MATCH (e:CodeEntity)-[:BELONGS_TO_SCAN]->(s:Scan {id: $scan_id}) "
-                "RETURN e.id, e.name, e.entity_type, 'CodeEntity' AS label "
-                "LIMIT 500",
-                {"scan_id": scan_id},
-            )
-        else:
-            node_result = self._query(
-                "MATCH (n) WHERE n:CodeEntity OR n:Pattern OR n:Concept "
-                "RETURN COALESCE(n.id, n.name) AS nid, "
-                "COALESCE(n.name, n.title, n.id) AS nname, "
-                "COALESCE(n.entity_type, n.status, n.level) AS ntype, "
-                "CASE WHEN n:CodeEntity THEN 'CodeEntity' "
-                "WHEN n:Pattern THEN 'Pattern' "
-                "ELSE 'Concept' END AS label "
-                "LIMIT 500",
-            )
+        node_result = self._query(
+            "MATCH (e:CodeEntity)-[:BELONGS_TO_SCAN]->(s:Scan {id: $scan_id}) "
+            "RETURN e.id, e.name, e.entity_type, 'CodeEntity' AS label "
+            "LIMIT 500",
+            {"scan_id": scan_id},
+        )
 
         nodes = []
         if node_result is not None:

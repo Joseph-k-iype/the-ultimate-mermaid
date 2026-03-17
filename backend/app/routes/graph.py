@@ -28,37 +28,36 @@ def get_graph_status():
 
 
 @router.get("/knowledge", response_model=KnowledgeGraphResponse)
-def get_knowledge_graph(scan_id: str | None = Query(default=None)):
-    """Full knowledge graph, optionally filtered by scan_id.
+def get_knowledge_graph(scan_id: str = Query(..., description="Scan ID to visualize")):
+    """Knowledge graph for a specific scan.
 
-    Falls back to in-memory scan data when FalkorDB is unavailable.
+    Each scan produces its own isolated graph. Falls back to in-memory
+    scan data when FalkorDB is unavailable.
     """
     data = graph_service.get_knowledge_graph(scan_id)
     nodes = [GraphNode(**n) for n in data.get("nodes", [])]
     edges = [GraphEdge(**e) for e in data.get("edges", [])]
 
-    # Fallback: pull from in-memory scans if graph returned nothing
+    # Fallback: pull from in-memory scan data if graph returned nothing
     if not nodes:
         from app.services.scan_orchestrator import orchestrator
 
-        all_scans = orchestrator._scans.values()
-        if scan_id:
-            scans = [s for s in all_scans if s.scan_id == scan_id]
-        else:
-            scans = list(all_scans)
-
-        node_set: set[str] = set()
-        for scan in scans:
-            for e in scan.entities[:500]:
+        state = orchestrator.get_scan(scan_id)
+        if state is not None:
+            node_set: set[str] = set()
+            for e in state.entities[:500]:
                 if e.id not in node_set:
                     node_set.add(e.id)
                     nodes.append(GraphNode(
                         id=e.id,
                         label=e.name,
                         type="CodeEntity",
-                        properties={"entity_type": e.entity_type, "file_path": e.file_path},
+                        properties={
+                            "entity_type": e.entity_type,
+                            "file_path": e.file_path,
+                        },
                     ))
-            for r in scan.relationships:
+            for r in state.relationships:
                 if r.source_id in node_set and r.target_id in node_set:
                     edges.append(GraphEdge(
                         source=r.source_id,
@@ -67,9 +66,7 @@ def get_knowledge_graph(scan_id: str | None = Query(default=None)):
                         properties={},
                     ))
 
-    stats = graph_service.get_stats()
-    if not stats.get("total_nodes"):
-        stats = {"total_nodes": len(nodes), "total_edges": len(edges)}
+    stats = {"total_nodes": len(nodes), "total_edges": len(edges)}
     return KnowledgeGraphResponse(nodes=nodes, edges=edges, stats=stats)
 
 

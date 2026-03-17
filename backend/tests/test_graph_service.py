@@ -58,7 +58,7 @@ class TestAvailability:
         assert service.query_perspective("scan-1", "er") is None
         assert service.search_patterns() is None
         assert service.find_related_patterns("p1") == []
-        assert service.get_knowledge_graph() == {"nodes": [], "edges": []}
+        assert service.get_knowledge_graph("any-scan") == {"nodes": [], "edges": []}
         stats = service.get_stats()
         assert stats["total_nodes"] == 0
 

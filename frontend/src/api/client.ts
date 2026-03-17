@@ -230,10 +230,8 @@ export const api = {
   // Graph / Knowledge Graph
   getGraphStatus: () => request<GraphStatusResponse>("/graph/status"),
 
-  getKnowledgeGraph: (scanId?: string) => {
-    const params = scanId ? `?scan_id=${scanId}` : "";
-    return request<KnowledgeGraphResponse>(`/graph/knowledge${params}`);
-  },
+  getKnowledgeGraph: (scanId: string) =>
+    request<KnowledgeGraphResponse>(`/graph/knowledge?scan_id=${scanId}`),
 
   getConceptHierarchy: () =>
     request<ConceptHierarchyResponse>("/graph/concepts"),

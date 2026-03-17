@@ -40,18 +40,27 @@ class TestGraphStatus:
 
 
 class TestKnowledgeGraph:
-    def test_knowledge_graph_empty_when_unavailable(self, client):
+    def test_knowledge_graph_requires_scan_id(self, client):
+        """scan_id is required — omitting it returns 422."""
         resp = client.get("/api/graph/knowledge")
+        assert resp.status_code == 422
+
+    def test_knowledge_graph_empty_for_unknown_scan(self, client):
+        resp = client.get("/api/graph/knowledge", params={"scan_id": "nonexistent"})
         assert resp.status_code == 200
         data = resp.json()
         assert data["nodes"] == []
         assert data["edges"] == []
 
-    def test_knowledge_graph_with_scan_id(self, client):
-        resp = client.get("/api/graph/knowledge", params={"scan_id": "nonexistent"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["nodes"] == []
+    def test_knowledge_graph_scoped_to_scan(self, client):
+        """Each scan returns only its own entities."""
+        resp = client.get("/api/graph/knowledge", params={"scan_id": "scan-a"})
+        data_a = resp.json()
+        resp = client.get("/api/graph/knowledge", params={"scan_id": "scan-b"})
+        data_b = resp.json()
+        # Both empty because neither scan exists, but they should not leak
+        assert data_a["nodes"] == []
+        assert data_b["nodes"] == []
 
 
 class TestConceptHierarchy:
