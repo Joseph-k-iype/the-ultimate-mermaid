@@ -36,7 +36,8 @@ Understanding a codebase is hard. Reading thousands of files to find how data fl
 - **Interactive knowledge graph** — Explore entities and relationships visually with zoom, pan, filtering, and layout controls
 - **Pattern catalog** — Document and share architectural patterns with your team using Markdown and embedded Mermaid diagrams
 - **No lock-in** — All diagrams use standard Mermaid syntax, portable to GitHub, Notion, Confluence, and dozens of other tools
-- **Enterprise ready** — Works behind corporate proxies with TLS inspection, uses system SSL certificates
+- **Cross-platform** — Runs on Windows, macOS, and Linux with auto-detected SSL certificates and OS-native temp directories
+- **Enterprise ready** — Works behind corporate proxies with TLS inspection, auto-detects or manually configures SSL certificates
 
 ---
 
@@ -58,14 +59,14 @@ Point PatternViz at any Git repository URL and it extracts a complete entity gra
 `calls`, `inherits`, `imports`, `uses`, `contains`, `produces`, `consumes`, `reads`, `writes`
 
 ### Four Architectural Perspectives
-Every scan generates four Mermaid diagrams, each filtering the entity graph through a different lens:
+Every scan produces interactive React Flow graphs and Mermaid diagrams for each perspective. Toggle between **Graph** (interactive, zoomable, draggable) and **Mermaid** (static, copyable code) views:
 
-| Perspective | Shows | Diagram Type |
-|-------------|-------|--------------|
-| **Ingestion** | API endpoints, message consumers, file readers | Flowchart TD |
-| **Entity-Relationship** | Classes, models, inheritance, associations | ER Diagram |
-| **Transformation** | Functions, DB operations, file I/O pipelines | Flowchart LR |
-| **Output** | Database writes, file writers, message producers | Flowchart TD |
+| Perspective | Shows | Default Layout |
+|-------------|-------|----------------|
+| **Ingestion** | API endpoints, message consumers, file readers | Vertical |
+| **Entity-Relationship** | Classes, models, inheritance, associations | Horizontal |
+| **Transformation** | Functions, DB operations, file I/O pipelines | Horizontal |
+| **Output** | Database writes, file writers, message producers | Vertical |
 
 ### Interactive Knowledge Graph
 Full-canvas graph visualization powered by React Flow and ELK layout:
@@ -432,16 +433,32 @@ PATTERNVIZ_NO_PROXY=localhost,127.0.0.1
 PATTERNVIZ_USE_SYSTEM_SSL=true
 ```
 
+### Custom SSL Certificate Paths
+
+Override auto-detection with explicit paths when needed:
+
+```env
+# PEM-format CA bundle file
+PATTERNVIZ_SSL_CA_FILE=/path/to/ca-bundle.pem          # Linux/macOS
+PATTERNVIZ_SSL_CA_FILE=C:\certs\corporate-ca-bundle.pem # Windows
+
+# Directory of individual CA certificates
+PATTERNVIZ_SSL_CA_PATH=/etc/ssl/certs                   # Linux
+PATTERNVIZ_SSL_CA_PATH=C:\certs\ca-dir                  # Windows
+```
+
 ### How It Works
 
 When a scan starts, the `RepoService` builds a git environment with:
 
 1. **Proxy variables** — `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` passed to the git subprocess
-2. **SSL CA bundle** — System certificate store is detected automatically:
-   - `/etc/ssl/cert.pem` (macOS)
-   - `/etc/ssl/certs/ca-certificates.crt` (Debian/Ubuntu)
-   - `/etc/pki/tls/certs/ca-bundle.crt` (RHEL/CentOS)
-   - Falls back to Python's `certifi` bundle
+2. **SSL CA bundle** — Auto-detected per platform:
+   - **Windows:** Git for Windows CA bundle, or exports from the Windows certificate store via PowerShell
+   - **macOS:** `/etc/ssl/cert.pem`, Homebrew OpenSSL (Intel + Apple Silicon)
+   - **Linux:** Debian, RHEL/CentOS, openSUSE, Alpine CA paths
+   - **Python `ssl` module:** OpenSSL's configured default paths
+   - **Fallback:** Python's `certifi` bundle (always available)
+3. **User override** — `SSL_CA_FILE` takes priority over auto-detection when set
 
 This avoids `GIT_SSL_NO_VERIFY=true` — your connections remain verified against the proper CA chain.
 
@@ -470,11 +487,13 @@ All settings use the `PATTERNVIZ_` prefix. Set via environment variables or `bac
 | `PATTERNVIZ_HOST` | `0.0.0.0` | Server bind address |
 | `PATTERNVIZ_PORT` | `8000` | Server port |
 | `PATTERNVIZ_CORS_ORIGINS` | `["http://localhost:5173"]` | Allowed CORS origins (JSON array) |
-| `PATTERNVIZ_CLONE_DIR` | `/tmp/patternviz` | Temporary directory for cloned repos |
+| `PATTERNVIZ_CLONE_DIR` | OS temp + `/patternviz` | Temp directory for cloned repos (cross-platform) |
 | `PATTERNVIZ_HTTP_PROXY` | _(empty)_ | HTTP proxy for git operations |
 | `PATTERNVIZ_HTTPS_PROXY` | _(empty)_ | HTTPS proxy for git operations |
 | `PATTERNVIZ_NO_PROXY` | `localhost,127.0.0.1` | Proxy bypass list |
-| `PATTERNVIZ_USE_SYSTEM_SSL` | `true` | Use OS certificate store for git |
+| `PATTERNVIZ_USE_SYSTEM_SSL` | `true` | Auto-detect OS certificate store |
+| `PATTERNVIZ_SSL_CA_FILE` | _(empty)_ | Explicit path to a PEM CA bundle file |
+| `PATTERNVIZ_SSL_CA_PATH` | _(empty)_ | Explicit path to a directory of CA certificates |
 | `PATTERNVIZ_FALKORDB_ENABLED` | `true` | Enable FalkorDB graph database |
 | `PATTERNVIZ_FALKORDB_HOST` | `localhost` | FalkorDB host |
 | `PATTERNVIZ_FALKORDB_PORT` | `6379` | FalkorDB port |
@@ -572,8 +591,9 @@ patterns/
         PatternEditorPage.tsx  Markdown editor + live preview
         TemplatePage.tsx       Template creation + rendering
       components/
+        FlowGraph.tsx          Reusable React Flow + ELK layout
         MermaidRenderer.tsx    Self-healing Mermaid (4-level retry)
-        DiagramTabs.tsx        Perspective tab switcher
+        DiagramTabs.tsx        Perspective tabs with Graph/Mermaid toggle
         ScanForm.tsx           Repository URL input
         PatternCard.tsx        Pattern grid item
         StatusBadge.tsx        Status pill (stone/amber/emerald/red)
@@ -689,7 +709,8 @@ volumes:
 
 | Problem | Solution |
 |---------|----------|
-| **Scan fails with SSL error** | Ensure `PATTERNVIZ_USE_SYSTEM_SSL=true` and your system CA store includes your corporate root CA |
+| **Scan fails with SSL error** | Set `PATTERNVIZ_USE_SYSTEM_SSL=true` or specify `PATTERNVIZ_SSL_CA_FILE=/path/to/ca-bundle.pem` |
+| **SSL fails on Windows** | Install Git for Windows, or set `PATTERNVIZ_SSL_CA_FILE=C:\certs\ca-bundle.pem` |
 | **Scan fails with proxy error** | Verify `PATTERNVIZ_HTTPS_PROXY` format: `http://host:port` or `http://user:pass@host:port` |
 | **Diagram shows "auto-corrected"** | Expected for large codebases. Backend limits to 80 entities; frontend truncates to 60 lines |
 | **Knowledge graph is empty** | Run a scan first. The graph populates from scan data (works without FalkorDB) |
@@ -718,6 +739,7 @@ volumes:
 | `DELETE` | `/api/scan` | Clear all scans |
 | `GET` | `/api/scan/{id}` | Get scan status |
 | `GET` | `/api/scan/{id}/entities` | Raw entities and relationships |
+| `GET` | `/api/scan/{id}/diagrams/{perspective}/data` | Perspective graph data (React Flow) |
 | `GET` | `/api/scan/{id}/diagrams/{perspective}` | Mermaid diagram |
 | `POST` | `/api/patterns` | Create pattern |
 | `GET` | `/api/patterns` | Search patterns |

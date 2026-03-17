@@ -1,10 +1,13 @@
 import logging
 import os
+import platform
 import shutil
 import ssl
-import certifi
+import subprocess
+import tempfile
 from pathlib import Path
 
+import certifi
 from git import Repo
 
 from app.analyzers.registry import default_registry
@@ -13,10 +16,155 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _export_windows_certs() -> str | None:
+    """Export certificates from the Windows certificate store to a temp PEM file.
+
+    Uses PowerShell to extract all trusted root CA certificates and writes
+    them to a temporary PEM file that Git and Python can consume.
+    Returns the path to the PEM file, or None on failure.
+    """
+    try:
+        ps_script = (
+            "Get-ChildItem -Path Cert:\\LocalMachine\\Root | "
+            "ForEach-Object { "
+            "'-----BEGIN CERTIFICATE-----'; "
+            "[Convert]::ToBase64String($_.RawData, 'InsertLineBreaks'); "
+            "'-----END CERTIFICATE-----' "
+            "}"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+
+        # Write to a temp file that persists for the process lifetime
+        pem_path = os.path.join(tempfile.gettempdir(), "patternviz_cacerts.pem")
+        with open(pem_path, "w", encoding="utf-8") as f:
+            f.write(result.stdout)
+
+        logger.info("Exported %d bytes from Windows cert store to %s",
+                     len(result.stdout), pem_path)
+        return pem_path
+    except Exception as exc:
+        logger.debug("Windows cert export failed: %s", exc)
+        return None
+
+
+def _find_ca_bundle() -> str | None:
+    """Find the best CA bundle for the current platform.
+
+    Priority order:
+    1. User-specified SSL_CA_FILE in settings
+    2. System certificate paths (platform-aware)
+    3. Python ssl module's default verify paths
+    4. Windows certificate store export
+    5. Python certifi bundle (last resort)
+    """
+    # 1. Explicit user override
+    if settings.SSL_CA_FILE:
+        ca = settings.SSL_CA_FILE
+        if os.path.isfile(ca):
+            logger.info("Using user-specified CA file: %s", ca)
+            return ca
+        logger.warning("SSL_CA_FILE not found: %s (falling back to auto-detect)", ca)
+
+    # 2. Platform-specific well-known paths
+    system = platform.system()
+
+    if system == "Windows":
+        windows_paths = [
+            # Git for Windows ships its own bundle
+            os.path.expandvars(r"%ProgramFiles%\Git\mingw64\etc\ssl\certs\ca-bundle.crt"),
+            os.path.expandvars(r"%ProgramFiles%\Git\mingw64\ssl\certs\ca-bundle.crt"),
+            os.path.expandvars(r"%LocalAppData%\Programs\Git\mingw64\etc\ssl\certs\ca-bundle.crt"),
+            # Scoop-installed Git
+            os.path.expandvars(r"%UserProfile%\scoop\apps\git\current\mingw64\etc\ssl\certs\ca-bundle.crt"),
+            # Chocolatey-installed Git
+            os.path.expandvars(r"%ChocolateyInstall%\lib\git\tools\mingw64\etc\ssl\certs\ca-bundle.crt"),
+        ]
+        for ca_path in windows_paths:
+            if os.path.isfile(ca_path):
+                return ca_path
+
+    elif system == "Darwin":
+        macos_paths = [
+            "/etc/ssl/cert.pem",
+            "/usr/local/etc/openssl/cert.pem",       # Homebrew Intel
+            "/opt/homebrew/etc/openssl/cert.pem",     # Homebrew Apple Silicon
+            "/usr/local/etc/openssl@3/cert.pem",
+            "/opt/homebrew/etc/openssl@3/cert.pem",
+        ]
+        for ca_path in macos_paths:
+            if os.path.isfile(ca_path):
+                return ca_path
+
+    else:
+        # Linux variants
+        linux_paths = [
+            "/etc/ssl/certs/ca-certificates.crt",     # Debian/Ubuntu
+            "/etc/pki/tls/certs/ca-bundle.crt",       # RHEL/CentOS/Fedora
+            "/etc/ssl/ca-bundle.pem",                  # openSUSE
+            "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",  # RHEL 7+
+            "/etc/ssl/cert.pem",                       # Alpine
+        ]
+        for ca_path in linux_paths:
+            if os.path.isfile(ca_path):
+                return ca_path
+
+    # 3. Python ssl module's default paths
+    try:
+        default_paths = ssl.get_default_verify_paths()
+        if default_paths.cafile and os.path.isfile(default_paths.cafile):
+            return default_paths.cafile
+        if default_paths.openssl_cafile and os.path.isfile(default_paths.openssl_cafile):
+            return default_paths.openssl_cafile
+    except Exception:
+        pass
+
+    # 4. Windows certificate store export
+    if system == "Windows":
+        exported = _export_windows_certs()
+        if exported:
+            return exported
+
+    # 5. certifi bundle (always available as a fallback)
+    return certifi.where()
+
+
+def _find_ca_path() -> str | None:
+    """Find a CA certificate directory if user specified one or the system has one."""
+    if settings.SSL_CA_PATH:
+        if os.path.isdir(settings.SSL_CA_PATH):
+            return settings.SSL_CA_PATH
+        logger.warning("SSL_CA_PATH not found: %s", settings.SSL_CA_PATH)
+
+    # Common certificate directories
+    ca_dirs = [
+        "/etc/ssl/certs",                           # Debian/Ubuntu
+        "/etc/pki/tls/certs",                       # RHEL/CentOS
+    ]
+    if platform.system() == "Windows":
+        git_certs = os.path.expandvars(
+            r"%ProgramFiles%\Git\mingw64\etc\ssl\certs"
+        )
+        ca_dirs.insert(0, git_certs)
+
+    for d in ca_dirs:
+        if os.path.isdir(d):
+            return d
+
+    return None
+
+
 def _build_git_env() -> dict[str, str]:
     """Build environment variables for git operations.
 
-    Applies enterprise proxy and system SSL settings when configured.
+    Applies enterprise proxy and SSL settings. Cross-platform:
+    works on Windows, macOS, and Linux.
     """
     env = dict(os.environ)
 
@@ -34,30 +182,17 @@ def _build_git_env() -> dict[str, str]:
 
     # SSL certificate configuration
     if settings.USE_SYSTEM_SSL:
-        # Try system SSL paths, fall back to certifi bundle
-        system_ca_paths = [
-            "/etc/ssl/certs/ca-certificates.crt",        # Debian/Ubuntu
-            "/etc/pki/tls/certs/ca-bundle.crt",          # RHEL/CentOS
-            "/etc/ssl/cert.pem",                          # macOS
-            "/usr/local/etc/openssl/cert.pem",            # macOS Homebrew
-            "/etc/ssl/ca-bundle.pem",                     # openSUSE
-        ]
+        ca_bundle = _find_ca_bundle()
+        if ca_bundle:
+            env["GIT_SSL_CAINFO"] = ca_bundle
+            env["SSL_CERT_FILE"] = ca_bundle
+            env["REQUESTS_CA_BUNDLE"] = ca_bundle
+            logger.info("Git using SSL CA bundle: %s", ca_bundle)
 
-        ca_bundle = None
-        for ca_path in system_ca_paths:
-            if os.path.isfile(ca_path):
-                ca_bundle = ca_path
-                break
-
-        if ca_bundle is None:
-            # Fall back to certifi bundle (ships with Python)
-            ca_bundle = certifi.where()
-
-        env["GIT_SSL_CAINFO"] = ca_bundle
-        # Also set for Python's ssl module (used by some git transports)
-        env["SSL_CERT_FILE"] = ca_bundle
-        env["REQUESTS_CA_BUNDLE"] = ca_bundle
-        logger.info("Git using SSL CA bundle: %s", ca_bundle)
+        ca_path = _find_ca_path()
+        if ca_path:
+            env["GIT_SSL_CAPATH"] = ca_path
+            env["SSL_CERT_DIR"] = ca_path
 
     return env
 

@@ -18,13 +18,15 @@ Scan any Git repository by URL. PatternViz clones the repo (shallow, depth=1), w
 - Message producers and consumers
 - Relationships: calls, inherits, imports, uses, contains, produces, consumes, reads, writes
 
-**Enterprise proxy support:** Configure `PATTERNVIZ_HTTPS_PROXY` in `backend/.env` to clone repos through a corporate proxy. System SSL certificates are used by default, which handles TLS-inspecting proxies with custom root CAs.
+**Cross-platform:** Works on Windows, macOS, and Linux. Clone directories default to the OS temp folder.
+
+**Enterprise proxy support:** Configure `PATTERNVIZ_HTTPS_PROXY` in `backend/.env` to clone repos through a corporate proxy. System SSL certificates are auto-detected on all platforms (Windows certificate store, macOS Keychain, Linux CA bundles). You can also specify custom CA bundle paths via `PATTERNVIZ_SSL_CA_FILE` and `PATTERNVIZ_SSL_CA_PATH`.
 
 ---
 
 ## Four Architectural Perspectives
 
-Every scan generates four Mermaid diagrams, each filtering the entity graph through a different architectural lens:
+Every scan produces both interactive React Flow graphs and Mermaid diagrams for each perspective. Toggle between **Graph** (interactive, zoomable, draggable) and **Mermaid** (static, copyable code) views on the diagram page.
 
 ### Ingestion
 Shows data entry points: API endpoints, message consumers, and file readers. Reveals how data enters the system.
@@ -142,6 +144,7 @@ Set `PATTERNVIZ_FALKORDB_ENABLED=true` in `backend/.env` (this is the default).
 | `/api/scan` | DELETE | Clear all scans |
 | `/api/scan/{id}` | GET | Get scan status |
 | `/api/scan/{id}/entities` | GET | Get raw entities and relationships |
+| `/api/scan/{id}/diagrams/{perspective}/data` | GET | Get perspective graph data (for React Flow) |
 | `/api/scan/{id}/diagrams/{perspective}` | GET | Get Mermaid diagram |
 | `/api/patterns` | POST | Create pattern |
 | `/api/patterns` | GET | Search patterns |

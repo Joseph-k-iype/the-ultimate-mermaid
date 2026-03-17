@@ -56,24 +56,42 @@ All settings are managed via `pydantic-settings` with the `PATTERNVIZ_` prefix.
 | `PATTERNVIZ_HOST` | `0.0.0.0` | Server bind address |
 | `PATTERNVIZ_PORT` | `8000` | Server port |
 | `PATTERNVIZ_CORS_ORIGINS` | `["http://localhost:5173"]` | Allowed CORS origins (JSON array) |
-| `PATTERNVIZ_CLONE_DIR` | `/tmp/patternviz` | Temp directory for cloned repos |
+| `PATTERNVIZ_CLONE_DIR` | OS temp + `/patternviz` | Temp directory for cloned repos (cross-platform) |
 | `PATTERNVIZ_HTTP_PROXY` | _(empty)_ | HTTP proxy for git operations |
 | `PATTERNVIZ_HTTPS_PROXY` | _(empty)_ | HTTPS proxy for git operations |
 | `PATTERNVIZ_NO_PROXY` | `localhost,127.0.0.1` | Proxy bypass list |
-| `PATTERNVIZ_USE_SYSTEM_SSL` | `true` | Use OS certificate store for git SSL |
+| `PATTERNVIZ_USE_SYSTEM_SSL` | `true` | Auto-detect OS certificate store |
+| `PATTERNVIZ_SSL_CA_FILE` | _(empty)_ | Explicit path to a PEM CA bundle file |
+| `PATTERNVIZ_SSL_CA_PATH` | _(empty)_ | Explicit path to a directory of CA certificates |
 | `PATTERNVIZ_FALKORDB_ENABLED` | `true` | Enable FalkorDB graph database |
 | `PATTERNVIZ_FALKORDB_HOST` | `localhost` | FalkorDB host |
 | `PATTERNVIZ_FALKORDB_PORT` | `6379` | FalkorDB port |
 | `PATTERNVIZ_FALKORDB_GRAPH` | `patternviz` | FalkorDB graph name |
 
-### Enterprise Proxy
+### Cross-Platform Defaults
 
-When `PATTERNVIZ_HTTPS_PROXY` is set, the `RepoService` passes proxy environment variables to Git's subprocess. When `PATTERNVIZ_USE_SYSTEM_SSL` is true (default), Git uses the system CA bundle:
+- **CLONE_DIR:** Uses `tempfile.gettempdir()` — resolves to `/tmp/patternviz` on Linux/macOS, `C:\Users\...\AppData\Local\Temp\patternviz` on Windows
 
-1. Checks standard OS paths (`/etc/ssl/certs/ca-certificates.crt`, `/etc/ssl/cert.pem`, etc.)
-2. Falls back to Python's `certifi` bundle
+### Enterprise Proxy & SSL
 
-This handles TLS-inspecting proxies that use custom root CAs without requiring `GIT_SSL_NO_VERIFY`.
+When `PATTERNVIZ_HTTPS_PROXY` is set, the `RepoService` passes proxy environment variables to Git's subprocess. When `PATTERNVIZ_USE_SYSTEM_SSL` is true (default), Git uses the system CA bundle.
+
+**CA bundle resolution priority (`_find_ca_bundle()`):**
+
+1. **User-specified** `SSL_CA_FILE` — if set and file exists, used immediately
+2. **Platform-specific paths:**
+   - **Windows:** Git for Windows bundles (Program Files, Scoop, Chocolatey install paths)
+   - **macOS:** `/etc/ssl/cert.pem`, Homebrew OpenSSL (Intel + Apple Silicon)
+   - **Linux:** Debian, RHEL/CentOS, openSUSE, Alpine CA paths
+3. **Python `ssl.get_default_verify_paths()`** — OpenSSL's configured paths
+4. **Windows certificate store export** — PowerShell extracts all trusted root CAs from `Cert:\LocalMachine\Root` to a temporary PEM file
+5. **Python `certifi` bundle** — always available as last resort
+
+**CA directory resolution (`_find_ca_path()`):**
+1. User-specified `SSL_CA_PATH`
+2. Platform defaults (`/etc/ssl/certs`, Git for Windows certs dir)
+
+The resolved paths are set as `GIT_SSL_CAINFO`, `GIT_SSL_CAPATH`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, and `REQUESTS_CA_BUNDLE` in the git subprocess environment. This avoids `GIT_SSL_NO_VERIFY=true`.
 
 ---
 
@@ -198,13 +216,14 @@ src/
 ├── pages/
 │   ├── Dashboard.tsx      — Scan form + history
 │   ├── DiagramPage.tsx    — Perspective diagram viewer
-│   ├── KnowledgeGraphPage.tsx — React Flow graph visualization
+│   ├── KnowledgeGraphPage.tsx — Full-page graph visualization
 │   ├── PatternLibraryPage.tsx — Pattern search + grid
 │   ├── PatternDetailPage.tsx  — Pattern view + transitions
 │   └── PatternEditorPage.tsx  — Markdown editor + preview
 └── components/
+    ├── FlowGraph.tsx      — Reusable React Flow + ELK layout component
     ├── MermaidRenderer.tsx — Self-healing Mermaid rendering
-    ├── DiagramTabs.tsx    — Perspective tab switcher
+    ├── DiagramTabs.tsx    — Perspective tabs with Graph/Mermaid toggle
     ├── ScanForm.tsx       — Repository URL input
     ├── PatternCard.tsx    — Pattern grid item
     ├── StatusBadge.tsx    — Status pill
@@ -234,15 +253,38 @@ The component tries four rendering strategies in sequence:
 
 A yellow notice appears when auto-correction was applied.
 
-### Knowledge Graph (React Flow)
+### FlowGraph Component
 
-`KnowledgeGraphPage.tsx` uses:
+`FlowGraph.tsx` is the shared React Flow + ELK layout component used by both `DiagramTabs` (perspective views) and `KnowledgeGraphPage`. It accepts:
 
+| Prop | Type | Description |
+|------|------|-------------|
+| `nodes` | `GraphNode[]` | API graph nodes to render |
+| `edges` | `GraphEdge[]` | API graph edges to render |
+| `isLoading` | `boolean` | Show loading spinner |
+| `height` | `string` | Container height (e.g., `"500px"` or `"100%"`) |
+| `maxNodes` | `number` | Cap nodes for performance (default: 200) |
+| `direction` | `"RIGHT" \| "DOWN"` | ELK layout direction |
+| `showDirectionToggle` | `boolean` | Show horizontal/vertical buttons |
+| `showMiniMap` | `boolean` | Show navigation minimap |
+| `emptyMessage` | `string` | Text when no nodes to display |
+
+Features:
 - **ELK layout** (`elkjs`) with compound hierarchy — entities grouped by ontology category
 - **Custom `EntityNode`** component with type icon, color, and tooltip
 - **Horizontal/Vertical toggle** for layout direction
 - **Interactive legend** for type filtering
 - **MiniMap** for navigation on large graphs
+- Loading spinner during layout computation
+- Grid fallback if ELK fails
+
+### DiagramTabs — Graph/Mermaid Toggle
+
+`DiagramTabs` now offers two view modes toggled via **Graph** / **Mermaid** buttons:
+- **Graph:** Uses `FlowGraph` with data from `GET /api/scan/{id}/diagrams/{perspective}/data`
+- **Mermaid:** Uses `MermaidRenderer` with Mermaid code from `GET /api/scan/{id}/diagrams/{perspective}`
+
+Each perspective has a default layout direction (ingestion/output = vertical, er/transformation = horizontal).
 
 ---
 
@@ -268,6 +310,10 @@ Get scan status. Returns `ScanResponse`.
 
 #### `GET /api/scan/{scan_id}/entities`
 Get raw entities and relationships. Returns `{ nodes: GraphNode[], edges: GraphEdge[] }`.
+
+#### `GET /api/scan/{scan_id}/diagrams/{perspective}/data`
+Get perspective-filtered entities and relationships as graph data (for React Flow).
+Returns `{ nodes: GraphNode[], edges: GraphEdge[] }`.
 
 #### `GET /api/scan/{scan_id}/diagrams/{perspective}`
 Get Mermaid diagram. Perspective must be: `ingestion`, `er`, `transformation`, `output`.
@@ -393,12 +439,26 @@ services:
 ## Troubleshooting
 
 ### Scan fails with SSL error
-Set `PATTERNVIZ_USE_SYSTEM_SSL=true` and ensure your system CA store includes your corporate root CA.
+Set `PATTERNVIZ_USE_SYSTEM_SSL=true` and ensure your system CA store includes your corporate root CA. If auto-detection fails, specify the path explicitly:
+```env
+PATTERNVIZ_SSL_CA_FILE=/path/to/ca-bundle.pem          # Linux/macOS
+PATTERNVIZ_SSL_CA_FILE=C:\certs\corporate-ca-bundle.pem # Windows
+```
+
+### Scan fails with SSL on Windows
+Ensure Git for Windows is installed (provides CA bundles). If not available, PatternViz will export certificates from the Windows certificate store automatically. You can also point to a specific bundle:
+```env
+PATTERNVIZ_SSL_CA_FILE=C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt
+```
 
 ### Scan fails with proxy error
 Verify `PATTERNVIZ_HTTPS_PROXY` is set correctly. Test with:
 ```bash
+# Linux/macOS
 HTTPS_PROXY=http://proxy:8080 git clone https://github.com/user/repo /tmp/test
+
+# Windows (PowerShell)
+$env:HTTPS_PROXY="http://proxy:8080"; git clone https://github.com/user/repo C:\Temp\test
 ```
 
 ### Mermaid diagram shows "auto-corrected" notice

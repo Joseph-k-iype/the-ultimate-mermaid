@@ -31,6 +31,17 @@ npm run dev
 
 Open `http://localhost:5173` in your browser.
 
+### Windows Setup
+
+PatternViz works natively on Windows. The clone directory defaults to `%TEMP%\patternviz` and SSL certificates are auto-detected from Git for Windows or exported from the Windows certificate store.
+
+```powershell
+cd backend
+pip install -e ".[dev]"
+copy ..\.env.example .env
+uvicorn app.main:app --reload
+```
+
 ### Enterprise Network Setup
 
 If you are behind a corporate proxy, edit `backend/.env`:
@@ -42,7 +53,27 @@ PATTERNVIZ_NO_PROXY=localhost,127.0.0.1
 PATTERNVIZ_USE_SYSTEM_SSL=true
 ```
 
-The `USE_SYSTEM_SSL=true` setting (enabled by default) makes Git use your OS certificate store. This is important when your proxy performs TLS inspection with a custom root CA.
+The `USE_SYSTEM_SSL=true` setting (enabled by default) makes Git use your OS certificate store. This works on all platforms:
+- **Windows:** Auto-detects Git for Windows CA bundle, or exports certificates from the Windows certificate store via PowerShell
+- **macOS:** Uses `/etc/ssl/cert.pem` or Homebrew OpenSSL bundles
+- **Linux:** Uses distribution-specific CA paths (Debian, RHEL, Alpine, etc.)
+- **Fallback:** Python's built-in `certifi` bundle (always available)
+
+### Custom SSL Certificate Paths
+
+If auto-detection does not find your corporate CA, specify the path explicitly:
+
+```env
+# Point to your corporate CA bundle (PEM format)
+PATTERNVIZ_SSL_CA_FILE=C:\certs\corporate-ca-bundle.pem        # Windows
+PATTERNVIZ_SSL_CA_FILE=/etc/pki/tls/certs/ca-bundle.crt        # Linux
+
+# Or point to a directory of individual CA certificates
+PATTERNVIZ_SSL_CA_PATH=C:\certs\ca-dir                         # Windows
+PATTERNVIZ_SSL_CA_PATH=/etc/ssl/certs                           # Linux
+```
+
+When `SSL_CA_FILE` is set and the file exists, it takes priority over auto-detection.
 
 ---
 
@@ -70,21 +101,22 @@ The scan clones the repository, analyzes all supported files, and generates four
 
 ## Viewing Diagrams
 
-After scanning, the **Diagram Page** shows four tabs:
+After scanning, the **Diagram Page** shows four perspective tabs. Each perspective has two view modes, toggled via the **Graph** / **Mermaid** buttons in the top right:
+
+- **Graph view** (default) — Interactive React Flow visualization with ELK layout. Zoom, pan, drag nodes, toggle horizontal/vertical layout. Color-coded entity nodes with type legends and minimap.
+- **Mermaid view** — Traditional Mermaid diagram rendering. Click **Copy Mermaid Code** to paste into GitHub, Notion, Confluence, or any Mermaid-compatible tool.
 
 ### Ingestion
 How data enters the system. API endpoints, message consumers, and file readers appear as entry nodes with their downstream calls.
 
 ### ER Diagram
-Structural view of classes and models. Shows inheritance, containment, and associations using standard ER notation. Each entity block lists its attributes and methods.
+Structural view of classes and models. Shows inheritance, containment, and associations. In Graph view, each entity is a draggable node. In Mermaid view, uses standard ER notation with attribute and method listings.
 
 ### Transformation
 The processing pipeline. Shows functions, database operations, and file I/O that transform data between ingestion and output.
 
 ### Output
 Where data goes. Database writes, file writers, and message producers are grouped by type.
-
-**Tip:** Click **Copy Mermaid Code** to copy the diagram source. Paste it into any Mermaid-compatible tool (GitHub, Notion, Confluence, etc.).
 
 ### Large Diagrams
 
