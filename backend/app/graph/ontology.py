@@ -33,6 +33,18 @@ class EntityClass(str, Enum):
     CONSUMER = "consumer"
     PRODUCER = "producer"
 
+    # Broader concepts (new)
+    PIPELINE_ELEMENT = "PipelineElement"
+    STRUCTURAL_GROUP = "StructuralGroup"
+
+    # Narrower: PipelineElement
+    PIPELINE_STAGE = "pipeline_stage"
+    PIPELINE_JOB = "pipeline_job"
+    PIPELINE_TRIGGER = "pipeline_trigger"
+
+    # Narrower: StructuralGroup
+    COMPONENT = "component"
+
 
 class OntologyRelationType(str, Enum):
     """All domain relationship types plus semantic ones."""
@@ -47,6 +59,10 @@ class OntologyRelationType(str, Enum):
     CONSUMES = "consumes"
     READS = "reads"
     WRITES = "writes"
+    TRIGGERS = "triggers"
+    DEPENDS_ON = "depends_on"
+    PASSES_DATA = "passes_data"
+    BELONGS_TO_COMPONENT = "belongs_to_component"
 
     # SKOS semantic relationships
     BROADER = "broader"
@@ -64,6 +80,8 @@ CONCEPT_HIERARCHY: dict[str, list[str]] = {
     "APIElement": ["endpoint", "model"],
     "DataAccessor": ["db_read", "db_write", "file_reader", "file_writer"],
     "MessageHandler": ["consumer", "producer"],
+    "PipelineElement": ["pipeline_stage", "pipeline_job", "pipeline_trigger"],
+    "StructuralGroup": ["component"],
 }
 
 # Reverse lookup: entity_type -> broader concept
@@ -79,6 +97,7 @@ ALL_ENTITY_TYPES: set[str] = set(ENTITY_TO_CONCEPT.keys())
 CODE_RELATIONSHIP_TYPES: set[str] = {
     "calls", "inherits", "imports", "uses", "contains",
     "produces", "consumes", "reads", "writes",
+    "triggers", "depends_on", "passes_data", "belongs_to_component",
 }
 
 
@@ -96,32 +115,34 @@ class PerspectiveDefinition:
 
 
 PERSPECTIVE_DEFINITIONS: dict[str, PerspectiveDefinition] = {
+    "manifest": PerspectiveDefinition(
+        name="manifest",
+        entity_types=[
+            "class", "model", "endpoint", "function", "method",
+            "db_read", "db_write", "file_reader", "file_writer",
+            "consumer", "producer",
+        ],
+        relationship_types=[
+            "calls", "inherits", "uses", "contains",
+            "produces", "consumes", "reads", "writes", "passes_data",
+        ],
+        description="Data manifest: inventory of all data entities grouped by component",
+    ),
     "er": PerspectiveDefinition(
         name="er",
         entity_types=["class", "model"],
-        relationship_types=["inherits", "contains", "uses"],
+        relationship_types=["inherits", "uses"],
         description="Entity-Relationship: classes, models and their structural relationships",
     ),
-    "ingestion": PerspectiveDefinition(
-        name="ingestion",
-        entity_types=["endpoint", "consumer", "file_reader"],
-        relationship_types=["calls", "uses", "reads", "consumes"],
-        description="Data ingestion: entry points and data consumers",
-    ),
-    "transformation": PerspectiveDefinition(
-        name="transformation",
+    "dataflow": PerspectiveDefinition(
+        name="dataflow",
         entity_types=[
-            "consumer", "file_reader", "db_read",
-            "producer", "file_writer", "db_write", "function",
+            "function", "method", "endpoint", "class", "model",
+            "db_read", "db_write", "file_reader", "file_writer",
+            "consumer", "producer",
         ],
-        relationship_types=["calls", "uses", "produces", "consumes", "reads", "writes"],
-        description="Data transformation: processing between ingestion and output",
-    ),
-    "output": PerspectiveDefinition(
-        name="output",
-        entity_types=["producer", "file_writer", "db_write"],
-        relationship_types=["calls", "uses", "writes", "produces"],
-        description="Output/export: data sinks and producers",
+        relationship_types=["calls", "passes_data", "reads", "writes", "produces", "consumes"],
+        description="Data flow: end-to-end trace from entry points through processing to storage",
     ),
 }
 

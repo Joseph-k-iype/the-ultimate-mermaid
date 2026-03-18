@@ -55,6 +55,7 @@ def get_knowledge_graph(scan_id: str = Query(..., description="Scan ID to visual
                         properties={
                             "entity_type": e.entity_type,
                             "file_path": e.file_path,
+                            "component": e.metadata.get("component", ""),
                         },
                     ))
             for r in state.relationships:

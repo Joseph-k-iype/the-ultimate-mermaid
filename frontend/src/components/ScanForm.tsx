@@ -18,7 +18,10 @@ export default function ScanForm({ onScanComplete }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!repoUrl.trim()) return;
-    mutation.mutate({ repo_url: repoUrl.trim(), branch: branch.trim() || "main" });
+    mutation.mutate({
+      repo_url: repoUrl.trim(),
+      branch: branch.trim() || "main",
+    });
   };
 
   return (
@@ -48,6 +51,7 @@ export default function ScanForm({ onScanComplete }: Props) {
           className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-stone-400"
         />
       </div>
+
       <button
         type="submit"
         disabled={mutation.isPending}

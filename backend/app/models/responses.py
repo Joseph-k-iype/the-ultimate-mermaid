@@ -9,6 +9,8 @@ class ScanResponse(BaseModel):
     repo_url: str
     branch: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    perspectives: list[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
 
 
 class DiagramResponse(BaseModel):

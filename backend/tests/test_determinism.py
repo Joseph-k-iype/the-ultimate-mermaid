@@ -1,8 +1,8 @@
 from app.analyzers.python_ast import PythonASTAnalyzer
 from app.analyzers.er_analyzer import ERAnalyzer
-from app.analyzers.ingestion_analyzer import IngestionAnalyzer
+from app.analyzers.dataflow_analyzer import DataFlowAnalyzer
 from app.generators.er_generator import ERMermaidGenerator
-from app.generators.ingestion_generator import IngestionMermaidGenerator
+from app.generators.dataflow_generator import DataFlowMermaidGenerator
 from app.utils.determinism import (
     canonical_sort_entities,
     canonical_sort_relationships,
@@ -77,12 +77,12 @@ def process(data):
         code2 = gen.generate(er.analyze(entities, rels))
         assert code1 == code2
 
-    def test_ingestion_pipeline_determinism(self):
+    def test_dataflow_pipeline_determinism(self):
         analyzer = PythonASTAnalyzer()
-        ing = IngestionAnalyzer()
-        gen = IngestionMermaidGenerator()
+        df = DataFlowAnalyzer()
+        gen = DataFlowMermaidGenerator()
 
         entities, rels = analyzer.analyze_file("app.py", self.SAMPLE_CODE)
-        code1 = gen.generate(ing.analyze(entities, rels))
-        code2 = gen.generate(ing.analyze(entities, rels))
+        code1 = gen.generate(df.analyze(entities, rels))
+        code2 = gen.generate(df.analyze(entities, rels))
         assert code1 == code2

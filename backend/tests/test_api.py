@@ -51,7 +51,7 @@ class TestScanAPI:
                 )
                 scan_id = resp.json()["scan_id"]
 
-                for perspective in ("ingestion", "er", "transformation", "output"):
+                for perspective in ("manifest", "er", "dataflow"):
                     resp = client.get(f"/api/scan/{scan_id}/diagrams/{perspective}")
                     assert resp.status_code == 200
                     data = resp.json()
@@ -59,8 +59,9 @@ class TestScanAPI:
                     assert data["mermaid_code"]
 
     def test_invalid_perspective(self, client):
+        # Non-existent scan returns 404
         resp = client.get("/api/scan/someid/diagrams/invalid")
-        assert resp.status_code == 400
+        assert resp.status_code == 404
 
 
 class TestTemplateAPI:

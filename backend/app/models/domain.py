@@ -19,6 +19,10 @@ class CodeEntity(BaseModel):
         "file_writer",
         "db_read",
         "db_write",
+        "pipeline_stage",
+        "pipeline_job",
+        "pipeline_trigger",
+        "component",
     ]
     file_path: str
     line_number: int
@@ -38,6 +42,10 @@ class Relationship(BaseModel):
         "consumes",
         "reads",
         "writes",
+        "triggers",
+        "depends_on",
+        "passes_data",
+        "belongs_to_component",
     ]
     metadata: dict = Field(default_factory=dict)
 

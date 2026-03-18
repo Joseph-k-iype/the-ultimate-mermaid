@@ -73,7 +73,7 @@ class TestConceptHierarchy:
         # Should have broader + narrower concepts
         assert len(concepts) > 0
         broader = [c for c in concepts if c["broader"] is None]
-        assert len(broader) == 4  # 4 broader concepts
+        assert len(broader) == 6  # 6 broader concepts
 
     def test_concept_structure(self, client):
         resp = client.get("/api/graph/concepts")

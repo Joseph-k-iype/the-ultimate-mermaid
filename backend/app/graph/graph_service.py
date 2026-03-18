@@ -111,7 +111,8 @@ class GraphService:
             self._query(
                 "MERGE (e:CodeEntity {id: $id}) "
                 "SET e.name = $name, e.entity_type = $entity_type, "
-                "e.file_path = $file_path, e.line_number = $line_number "
+                "e.file_path = $file_path, e.line_number = $line_number, "
+                "e.component = $component "
                 "WITH e "
                 "MATCH (s:Scan {id: $scan_id}) "
                 "MERGE (e)-[:BELONGS_TO_SCAN]->(s)",
@@ -121,6 +122,7 @@ class GraphService:
                     "entity_type": entity.entity_type,
                     "file_path": entity.file_path,
                     "line_number": entity.line_number,
+                    "component": entity.metadata.get("component", ""),
                     "scan_id": scan_id,
                 },
             )
@@ -242,7 +244,7 @@ class GraphService:
         entity_result = self._query(
             "MATCH (e:CodeEntity)-[:BELONGS_TO_SCAN]->(s:Scan {id: $scan_id}) "
             "WHERE e.entity_type IN $entity_types "
-            "RETURN e.id, e.name, e.entity_type, e.file_path, e.line_number",
+            "RETURN e.id, e.name, e.entity_type, e.file_path, e.line_number, e.component", # Added e.component
             {"scan_id": scan_id, "entity_types": defn.entity_types},
         )
 
@@ -252,10 +254,11 @@ class GraphService:
         entities: list[CodeEntity] = []
         entity_ids: set[str] = set()
         for row in entity_result.result_set:
-            eid, name, etype, fpath, line = row
+            eid, name, etype, fpath, line, comp = row
             entities.append(CodeEntity(
                 id=eid, name=name, entity_type=etype,
                 file_path=fpath, line_number=line,
+                metadata={"component": comp} if comp else {}
             ))
             entity_ids.add(eid)
 

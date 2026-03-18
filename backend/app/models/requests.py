@@ -4,6 +4,7 @@ from pydantic import BaseModel
 class ScanRequest(BaseModel):
     repo_url: str
     branch: str = "main"
+    perspectives: list[str] = ["manifest", "er", "dataflow"]
 
 
 class TemplateCreateRequest(BaseModel):

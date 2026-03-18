@@ -1,6 +1,6 @@
 import re
 from abc import ABC, abstractmethod
-from collections import Counter
+from collections import Counter, defaultdict
 
 from app.models.domain import CodeEntity, DiagramData, Relationship
 
@@ -91,4 +91,28 @@ class MermaidGenerator(ABC):
             if r.source_id in kept_ids and r.target_id in kept_ids
         ]
         return kept, kept_rels, True
+
+    @staticmethod
+    def group_by_component(entities: list[CodeEntity]) -> dict[str, list[CodeEntity]]:
+        """Group entities by their component metadata."""
+        groups: dict[str, list[CodeEntity]] = defaultdict(list)
+        for e in entities:
+            groups[e.metadata.get("component", "ungrouped")].append(e)
+        return groups
+
+
+def filter_diagram_data(dd: DiagramData, entity_ids: set[str]) -> DiagramData:
+    """Return a copy of DiagramData filtered to only the given entity IDs."""
+    filtered_entities = [e for e in dd.entities if e.id in entity_ids]
+    filtered_ids = {e.id for e in filtered_entities}
+    filtered_rels = [
+        r for r in dd.relationships
+        if r.source_id in filtered_ids and r.target_id in filtered_ids
+    ]
+    return DiagramData(
+        entities=filtered_entities,
+        relationships=filtered_rels,
+        flow_nodes=[n for n in (dd.flow_nodes or []) if n.id in filtered_ids],
+        metadata=dd.metadata,
+    )
 

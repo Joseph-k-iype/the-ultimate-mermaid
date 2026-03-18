@@ -3,7 +3,7 @@ from app.models.domain import CodeEntity, DiagramData, FlowNode, Relationship
 from app.utils.determinism import canonical_sort_entities, canonical_sort_relationships
 
 _STRUCTURAL_TYPES = {"class", "model"}
-_ER_RELATIONSHIP_TYPES = {"inherits", "contains", "uses"}
+_ER_RELATIONSHIP_TYPES = {"inherits", "uses"}
 
 
 class ERAnalyzer(PerspectiveAnalyzer):

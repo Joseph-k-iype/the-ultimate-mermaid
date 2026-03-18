@@ -213,6 +213,10 @@ class RepoService:
         Repo.clone_from(url, str(dest), branch=branch, depth=1, env=git_env)
         return dest
 
+    # Filenames that should always be checked even without a recognized extension
+    _EXTRA_FILENAMES = {"Dockerfile", "Jenkinsfile", "docker-compose.yml",
+                        "docker-compose.yaml"}
+
     def scan_files(self, repo_path: Path) -> list[tuple[str, str]]:
         results: list[tuple[str, str]] = []
         for file_path in sorted(repo_path.rglob("*")):

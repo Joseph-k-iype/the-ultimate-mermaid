@@ -16,6 +16,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export interface ScanRequest {
   repo_url: string;
   branch: string;
+  perspectives?: string[];
 }
 
 export interface ScanResponse {
@@ -24,6 +25,8 @@ export interface ScanResponse {
   repo_url: string;
   branch: string;
   created_at: string;
+  perspectives: string[];
+  components: string[];
 }
 
 export interface DiagramResponse {
@@ -91,6 +94,20 @@ export interface PatternCreateRequest {
   linked_scan_id?: string;
 }
 
+export interface PublishFromScanRequest {
+  title: string;
+  description: string;
+  owner: string;
+  tags?: string[];
+  perspectives?: string[];
+  content?: string;
+  component?: string;
+}
+
+export interface ComponentMap {
+  [name: string]: { entity_count: number; entity_ids: string[] };
+}
+
 export interface PatternUpdateRequest {
   title?: string;
   description?: string;
@@ -138,6 +155,49 @@ export interface ConceptHierarchyResponse {
   concepts: ConceptNode[];
 }
 
+// Data Manifest types
+export interface ManifestField {
+  name: string;
+  type: string;
+}
+
+export interface ManifestEntity {
+  name: string;
+  type: string;
+  qualified_id: string;
+  location: { file: string; line: number };
+  schema?: { fields: ManifestField[] };
+  methods?: string[];
+  http_method?: string;
+  route?: string;
+  lineage?: {
+    downstream?: { target: string; type: string }[];
+    upstream?: { source: string; type: string }[];
+  };
+}
+
+export interface ManifestComponent {
+  name: string;
+  entity_count: number;
+  entities: ManifestEntity[];
+}
+
+export interface DataManifest {
+  version: string;
+  scan_id: string;
+  repository: string;
+  branch: string;
+  generated_at: string;
+  summary: {
+    total_entities: number;
+    total_relationships: number;
+    components: string[];
+    categories: Record<string, number>;
+    entity_types: Record<string, number>;
+  };
+  components: ManifestComponent[];
+}
+
 export const api = {
   startScan: (req: ScanRequest) =>
     request<ScanResponse>("/scan", {
@@ -151,16 +211,23 @@ export const api = {
 
   deleteAllScans: () => request<void>("/scan", { method: "DELETE" }),
 
-  getDiagram: (scanId: string, perspective: string) =>
-    request<DiagramResponse>(`/scan/${scanId}/diagrams/${perspective}`),
+  getDiagram: (scanId: string, perspective: string, component?: string) => {
+    const params = component ? `?component=${encodeURIComponent(component)}` : "";
+    return request<DiagramResponse>(`/scan/${scanId}/diagrams/${perspective}${params}`);
+  },
 
   getScanEntities: (scanId: string) =>
     request<KnowledgeGraphResponse>(`/scan/${scanId}/entities`),
 
-  getDiagramData: (scanId: string, perspective: string) =>
-    request<KnowledgeGraphResponse>(
-      `/scan/${scanId}/diagrams/${perspective}/data`
-    ),
+  getDiagramData: (scanId: string, perspective: string, component?: string) => {
+    const params = component ? `?component=${encodeURIComponent(component)}` : "";
+    return request<KnowledgeGraphResponse>(
+      `/scan/${scanId}/diagrams/${perspective}/data${params}`
+    );
+  },
+
+  getManifest: (scanId: string) =>
+    request<DataManifest>(`/scan/${scanId}/manifest`),
 
   listTemplates: () => request<TemplateResponse[]>("/templates"),
 
@@ -226,6 +293,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(req),
     }),
+
+  publishPatternFromScan: (scanId: string, req: PublishFromScanRequest) =>
+    request<PatternResponse>(`/patterns/from-scan/${scanId}`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
+  getScanComponents: (scanId: string) =>
+    request<ComponentMap>(`/scan/${scanId}/components`),
 
   // Graph / Knowledge Graph
   getGraphStatus: () => request<GraphStatusResponse>("/graph/status"),

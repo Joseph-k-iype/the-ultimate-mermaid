@@ -51,6 +51,41 @@ _HTTP_CLIENT_NAMES = {"requests.get", "requests.post", "requests.put", "requests
 _PRODUCER_NAMES = {"produce", "publish", "send_message", "send"}
 _CONSUMER_NAMES = {"consume", "subscribe", "on_message"}
 
+_BUILTIN_TYPE_NAMES = frozenset({
+    "str", "int", "float", "bool", "list", "dict", "set", "tuple",
+    "None", "Any", "Optional", "bytes", "object", "type", "complex",
+})
+
+
+def _extract_type_names(annotation: ast.expr | None) -> list[str]:
+    """Extract referenced type names from a type annotation AST node."""
+    if annotation is None:
+        return []
+    if isinstance(annotation, ast.Name):
+        return [annotation.id]
+    if isinstance(annotation, ast.Attribute):
+        name = _attr_chain(annotation)
+        return [name] if name else []
+    if isinstance(annotation, ast.Subscript):
+        # e.g. list[User], Optional[Order] — recurse into slice
+        results = _extract_type_names(annotation.value)
+        results.extend(_extract_type_names(annotation.slice))
+        return results
+    if isinstance(annotation, ast.Tuple):
+        # e.g. tuple[str, int]
+        out: list[str] = []
+        for elt in annotation.elts:
+            out.extend(_extract_type_names(elt))
+        return out
+    if isinstance(annotation, ast.BinOp):
+        # e.g. X | Y (union syntax)
+        return _extract_type_names(annotation.left) + _extract_type_names(annotation.right)
+    if isinstance(annotation, ast.Constant):
+        # e.g. string literal forward refs
+        if isinstance(annotation.value, str):
+            return [annotation.value]
+    return []
+
 
 class PythonASTAnalyzer(CodeAnalyzer):
     """Analyzes Python source files using the ``ast`` module."""
@@ -106,6 +141,68 @@ class PythonASTAnalyzer(CodeAnalyzer):
         relationships: list[Relationship],
     ) -> None:
         class_id = generate_entity_id(file_path, node.name)
+
+        # --- Extract class attributes ---
+        attributes: list[str] = []
+        referenced_types: set[str] = set()
+
+        for stmt in node.body:
+            # Class-level annotated attributes: x: Type
+            if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                name_str = stmt.target.id
+                # Try to get a readable type name
+                type_names = _extract_type_names(stmt.annotation)
+                type_label = type_names[0] if type_names else "Any"
+                attributes.append(f"{name_str}: {type_label}")
+                for tn in type_names:
+                    if tn not in _BUILTIN_TYPE_NAMES:
+                        referenced_types.add(tn)
+
+        # Walk __init__ for self.x = ... assignments and self.x: Type annotations
+        for stmt in node.body:
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)) and stmt.name == "__init__":
+                for init_stmt in ast.walk(stmt):
+                    if isinstance(init_stmt, ast.AnnAssign):
+                        if (isinstance(init_stmt.target, ast.Attribute)
+                                and isinstance(init_stmt.target.value, ast.Name)
+                                and init_stmt.target.value.id == "self"):
+                            attr_name = init_stmt.target.attr
+                            type_names = _extract_type_names(init_stmt.annotation)
+                            type_label = type_names[0] if type_names else "Any"
+                            attr_str = f"{attr_name}: {type_label}"
+                            if attr_str not in attributes:
+                                attributes.append(attr_str)
+                            for tn in type_names:
+                                if tn not in _BUILTIN_TYPE_NAMES:
+                                    referenced_types.add(tn)
+                    elif isinstance(init_stmt, ast.Assign):
+                        for target in init_stmt.targets:
+                            if (isinstance(target, ast.Attribute)
+                                    and isinstance(target.value, ast.Name)
+                                    and target.value.id == "self"):
+                                attr_name = target.attr
+                                attr_str = f"{attr_name}: Any"
+                                if not any(a.startswith(f"{attr_name}:") for a in attributes):
+                                    attributes.append(attr_str)
+
+        # --- Extract method names (excluding dunder methods) ---
+        _DUNDER_SKIP = {"__init__", "__str__", "__repr__", "__hash__", "__eq__",
+                        "__ne__", "__lt__", "__le__", "__gt__", "__ge__",
+                        "__len__", "__bool__", "__del__", "__new__"}
+        methods: list[str] = []
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if child.name not in _DUNDER_SKIP:
+                    methods.append(child.name)
+                # Collect type refs from method params and return annotations
+                for arg in child.args.args:
+                    for tn in _extract_type_names(arg.annotation):
+                        if tn not in _BUILTIN_TYPE_NAMES:
+                            referenced_types.add(tn)
+                for tn in _extract_type_names(child.returns):
+                    if tn not in _BUILTIN_TYPE_NAMES:
+                        referenced_types.add(tn)
+
         entities.append(
             CodeEntity(
                 id=class_id,
@@ -113,7 +210,11 @@ class PythonASTAnalyzer(CodeAnalyzer):
                 entity_type="class",
                 file_path=file_path,
                 line_number=node.lineno,
-                metadata={"decorators": [_decorator_name(d) for d in node.decorator_list if _decorator_name(d)]},
+                metadata={
+                    "decorators": [_decorator_name(d) for d in node.decorator_list if _decorator_name(d)],
+                    "attributes": attributes,
+                    "methods": methods,
+                },
             )
         )
 
@@ -129,6 +230,17 @@ class PythonASTAnalyzer(CodeAnalyzer):
                         relationship_type="inherits",
                     )
                 )
+
+        # "uses" relationships from type annotations
+        for type_name in sorted(referenced_types):
+            target_id = generate_entity_id(file_path, type_name)
+            relationships.append(
+                Relationship(
+                    source_id=class_id,
+                    target_id=target_id,
+                    relationship_type="uses",
+                )
+            )
 
         # Methods inside the class
         for child in ast.iter_child_nodes(node):
@@ -148,6 +260,8 @@ class PythonASTAnalyzer(CodeAnalyzer):
     ) -> None:
         # Check for route decorators  ->  endpoint entity
         endpoint = self._extract_endpoint(node)
+        func_id = generate_entity_id(file_path, node.name)
+
         if endpoint:
             eid = generate_entity_id(file_path, f"endpoint::{endpoint['method']}::{endpoint['path']}")
             entities.append(
@@ -160,8 +274,14 @@ class PythonASTAnalyzer(CodeAnalyzer):
                     metadata={"http_method": endpoint["method"], "route": endpoint["path"]},
                 )
             )
-
-        func_id = generate_entity_id(file_path, node.name)
+            # Link endpoint → handler function so data flow traces from entry
+            relationships.append(
+                Relationship(
+                    source_id=eid,
+                    target_id=func_id,
+                    relationship_type="calls",
+                )
+            )
         entities.append(
             CodeEntity(
                 id=func_id,
@@ -206,6 +326,14 @@ class PythonASTAnalyzer(CodeAnalyzer):
                     metadata={"http_method": endpoint["method"], "route": endpoint["path"]},
                 )
             )
+            # Link endpoint → handler method so data flow traces from entry
+            relationships.append(
+                Relationship(
+                    source_id=eid,
+                    target_id=method_id,
+                    relationship_type="calls",
+                )
+            )
 
         entities.append(
             CodeEntity(
@@ -240,6 +368,12 @@ class PythonASTAnalyzer(CodeAnalyzer):
         entities: list[CodeEntity],
         relationships: list[Relationship],
     ) -> None:
+        # Collect parameter names for passes_data detection
+        param_names: set[str] = set()
+        for arg in func_node.args.args:
+            if arg.arg != "self":
+                param_names.add(arg.arg)
+
         for node in ast.walk(func_node):
             if not isinstance(node, ast.Call):
                 continue
@@ -358,6 +492,23 @@ class PythonASTAnalyzer(CodeAnalyzer):
             relationships.append(
                 Relationship(source_id=parent_id, target_id=target_id, relationship_type="calls")
             )
+
+            # --- passes_data: parameter forwarding detection ---------------------
+            if param_names:
+                for arg in node.args:
+                    arg_name = None
+                    if isinstance(arg, ast.Name):
+                        arg_name = arg.id
+                    if arg_name and arg_name in param_names:
+                        relationships.append(
+                            Relationship(
+                                source_id=parent_id,
+                                target_id=target_id,
+                                relationship_type="passes_data",
+                                metadata={"param": arg_name},
+                            )
+                        )
+                        break  # one passes_data per call is enough
 
     # ------------------------------------------------------------------
     # Helpers

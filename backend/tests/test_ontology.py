@@ -19,6 +19,8 @@ class TestEntityClassEnum:
             "endpoint", "model",
             "db_read", "db_write", "file_reader", "file_writer",
             "consumer", "producer",
+            "pipeline_stage", "pipeline_job", "pipeline_trigger",
+            "component",
         }
         for et in leaf_types:
             assert et in ENTITY_TO_CONCEPT, f"{et} missing from ENTITY_TO_CONCEPT"
@@ -38,7 +40,8 @@ class TestEntityClassEnum:
 class TestOntologyRelationType:
     def test_code_relationships_defined(self):
         expected = {"calls", "inherits", "imports", "uses", "contains",
-                    "produces", "consumes", "reads", "writes"}
+                    "produces", "consumes", "reads", "writes",
+                    "triggers", "depends_on", "passes_data", "belongs_to_component"}
         assert CODE_RELATIONSHIP_TYPES == expected
 
     def test_all_code_rels_in_enum(self):
@@ -56,9 +59,10 @@ class TestOntologyRelationType:
 
 class TestConceptHierarchy:
     def test_hierarchy_is_complete(self):
-        assert len(CONCEPT_HIERARCHY) == 4
+        assert len(CONCEPT_HIERARCHY) == 6
         assert set(CONCEPT_HIERARCHY.keys()) == {
             "CodeConstruct", "APIElement", "DataAccessor", "MessageHandler",
+            "PipelineElement", "StructuralGroup",
         }
 
     def test_no_circular_references(self):
@@ -77,10 +81,17 @@ class TestConceptHierarchy:
 
 
 class TestPerspectiveDefinitions:
-    def test_all_four_perspectives_defined(self):
+    def test_all_perspectives_defined(self):
         assert set(PERSPECTIVE_DEFINITIONS.keys()) == {
-            "er", "ingestion", "transformation", "output",
+            "manifest", "er", "dataflow",
         }
+
+    def test_manifest_types(self):
+        defn = PERSPECTIVE_DEFINITIONS["manifest"]
+        assert "class" in defn.entity_types
+        assert "endpoint" in defn.entity_types
+        assert "db_write" in defn.entity_types
+        assert "calls" in defn.relationship_types
 
     def test_er_types(self):
         defn = PERSPECTIVE_DEFINITIONS["er"]
@@ -88,23 +99,13 @@ class TestPerspectiveDefinitions:
         assert "model" in defn.entity_types
         assert "inherits" in defn.relationship_types
 
-    def test_ingestion_types(self):
-        defn = PERSPECTIVE_DEFINITIONS["ingestion"]
+    def test_dataflow_types(self):
+        defn = PERSPECTIVE_DEFINITIONS["dataflow"]
         assert "endpoint" in defn.entity_types
-        assert "consumer" in defn.entity_types
-        assert "reads" in defn.relationship_types
-
-    def test_transformation_types(self):
-        defn = PERSPECTIVE_DEFINITIONS["transformation"]
-        assert "function" in defn.entity_types
-        assert "db_read" in defn.entity_types
-        assert "writes" in defn.relationship_types
-
-    def test_output_types(self):
-        defn = PERSPECTIVE_DEFINITIONS["output"]
-        assert "producer" in defn.entity_types
         assert "db_write" in defn.entity_types
-        assert "produces" in defn.relationship_types
+        assert "calls" in defn.relationship_types
+        assert "reads" in defn.relationship_types
+        assert "writes" in defn.relationship_types
 
     def test_all_entity_types_valid(self):
         """Every entity_type in a perspective must be a known leaf type."""

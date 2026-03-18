@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 
-const PERSPECTIVES = ["ingestion", "er", "transformation", "output"];
+const PERSPECTIVES = ["er", "dataflow", "manifest"];
 
 export default function TemplateEditor() {
   const [name, setName] = useState("");
-  const [perspective, setPerspective] = useState("ingestion");
+  const [perspective, setPerspective] = useState("er");
   const [content, setContent] = useState("");
   const queryClient = useQueryClient();
 

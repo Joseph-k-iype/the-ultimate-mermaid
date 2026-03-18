@@ -1,5 +1,7 @@
+from collections import defaultdict
+
 from app.generators.base import MermaidGenerator
-from app.models.domain import DiagramData, FlowNode
+from app.models.domain import CodeEntity, DiagramData, FlowNode
 
 
 class TransformationMermaidGenerator(MermaidGenerator):
@@ -38,9 +40,28 @@ class TransformationMermaidGenerator(MermaidGenerator):
 
         sorted_nodes = sorted(flow_nodes, key=lambda n: n.id)
 
-        # Emit node definitions
+        # Group by component if entity metadata available
+        entity_map = {e.id: e for e in data.entities} if data.entities else {}
+        groups: dict[str, list[FlowNode]] = defaultdict(list)
         for node in sorted_nodes:
-            lines.append(self._render_node(node))
+            entity = entity_map.get(node.id)
+            comp = entity.metadata.get("component", "ungrouped") if entity else "ungrouped"
+            groups[comp].append(node)
+
+        has_components = len(groups) > 1 or (len(groups) == 1 and "ungrouped" not in groups)
+
+        # Emit node definitions (with component subgraphs when available)
+        for comp in sorted(groups.keys()):
+            nodes_in_group = groups[comp]
+            if has_components:
+                sg_id = self.sanitize_id(f"comp_{comp}")
+                lines.append(f"    subgraph {sg_id} [{self.sanitize_label(comp)}]")
+                for node in nodes_in_group:
+                    lines.append("    " + self._render_node(node))
+                lines.append("    end")
+            else:
+                for node in nodes_in_group:
+                    lines.append(self._render_node(node))
 
         # Emit edges
         for node in sorted_nodes:

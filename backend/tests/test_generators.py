@@ -1,11 +1,9 @@
 from app.analyzers.er_analyzer import ERAnalyzer
-from app.analyzers.ingestion_analyzer import IngestionAnalyzer
-from app.analyzers.output_analyzer import OutputAnalyzer
-from app.analyzers.transformation_analyzer import TransformationAnalyzer
+from app.analyzers.dataflow_analyzer import DataFlowAnalyzer
+from app.analyzers.manifest_analyzer import ManifestAnalyzer
 from app.generators.er_generator import ERMermaidGenerator
-from app.generators.ingestion_generator import IngestionMermaidGenerator
-from app.generators.output_generator import OutputMermaidGenerator
-from app.generators.transformation_generator import TransformationMermaidGenerator
+from app.generators.dataflow_generator import DataFlowMermaidGenerator
+from app.generators.manifest_generator import ManifestMermaidGenerator
 
 
 class TestERGenerator:
@@ -26,17 +24,25 @@ class TestERGenerator:
         assert len(results) == 1
 
 
-class TestIngestionGenerator:
+class TestManifestGenerator:
     def test_generates_flowchart(self, sample_entities, sample_relationships):
-        analyzer = IngestionAnalyzer()
+        analyzer = ManifestAnalyzer()
         data = analyzer.analyze(sample_entities, sample_relationships)
-        gen = IngestionMermaidGenerator()
+        gen = ManifestMermaidGenerator()
         code = gen.generate(data)
-        assert code.startswith("flowchart TD")
+        assert code.startswith("flowchart TB")
+
+    def test_includes_all_entity_types(self, sample_entities, sample_relationships):
+        analyzer = ManifestAnalyzer()
+        data = analyzer.analyze(sample_entities, sample_relationships)
+        entity_types = {e.entity_type for e in data.entities}
+        # sample_entities has class, endpoint, function, file_reader, db_write
+        assert "class" in entity_types
+        assert "endpoint" in entity_types
 
     def test_determinism(self, sample_entities, sample_relationships):
-        analyzer = IngestionAnalyzer()
-        gen = IngestionMermaidGenerator()
+        analyzer = ManifestAnalyzer()
+        gen = ManifestMermaidGenerator()
         results = set()
         for _ in range(5):
             data = analyzer.analyze(sample_entities, sample_relationships)
@@ -44,35 +50,17 @@ class TestIngestionGenerator:
         assert len(results) == 1
 
 
-class TestTransformationGenerator:
+class TestDataFlowGenerator:
     def test_generates_flowchart_lr(self, sample_entities, sample_relationships):
-        analyzer = TransformationAnalyzer()
+        analyzer = DataFlowAnalyzer()
         data = analyzer.analyze(sample_entities, sample_relationships)
-        gen = TransformationMermaidGenerator()
+        gen = DataFlowMermaidGenerator()
         code = gen.generate(data)
         assert code.startswith("flowchart LR")
 
     def test_determinism(self, sample_entities, sample_relationships):
-        analyzer = TransformationAnalyzer()
-        gen = TransformationMermaidGenerator()
-        results = set()
-        for _ in range(5):
-            data = analyzer.analyze(sample_entities, sample_relationships)
-            results.add(gen.generate(data))
-        assert len(results) == 1
-
-
-class TestOutputGenerator:
-    def test_generates_flowchart(self, sample_entities, sample_relationships):
-        analyzer = OutputAnalyzer()
-        data = analyzer.analyze(sample_entities, sample_relationships)
-        gen = OutputMermaidGenerator()
-        code = gen.generate(data)
-        assert code.startswith("flowchart TD")
-
-    def test_determinism(self, sample_entities, sample_relationships):
-        analyzer = OutputAnalyzer()
-        gen = OutputMermaidGenerator()
+        analyzer = DataFlowAnalyzer()
+        gen = DataFlowMermaidGenerator()
         results = set()
         for _ in range(5):
             data = analyzer.analyze(sample_entities, sample_relationships)

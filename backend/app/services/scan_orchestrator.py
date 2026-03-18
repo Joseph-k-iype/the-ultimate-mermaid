@@ -2,34 +2,40 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.analyzers.component_detector import detect_components
+from app.analyzers.dataflow_analyzer import DataFlowAnalyzer
 from app.analyzers.er_analyzer import ERAnalyzer
-from app.analyzers.ingestion_analyzer import IngestionAnalyzer
-from app.analyzers.output_analyzer import OutputAnalyzer
+from app.analyzers.manifest_analyzer import ManifestAnalyzer
 from app.analyzers.registry import default_registry
-from app.analyzers.transformation_analyzer import TransformationAnalyzer
+from app.generators.dataflow_generator import DataFlowMermaidGenerator
 from app.generators.er_generator import ERMermaidGenerator
-from app.generators.ingestion_generator import IngestionMermaidGenerator
-from app.generators.output_generator import OutputMermaidGenerator
-from app.generators.transformation_generator import TransformationMermaidGenerator
+from app.generators.manifest_generator import ManifestMermaidGenerator
 from app.models.domain import CodeEntity, DiagramData, Relationship
 from app.models.responses import DiagramResponse, ScanResponse
 from app.services.repo_service import RepoService
 from app.utils.determinism import generate_scan_id
 
-PERSPECTIVES = ("ingestion", "er", "transformation", "output")
+# Pipeline order matters: manifest → er → dataflow.
+# Each stage builds on the previous conceptually:
+#   manifest = what data exists (inventory)
+#   er       = how data entities relate structurally
+#   dataflow = how data moves end-to-end
+ALL_PERSPECTIVES = ("manifest", "er", "dataflow")
+DEFAULT_PERSPECTIVES = ALL_PERSPECTIVES
+
+# Keep old name for backward compatibility in imports
+PERSPECTIVES = ALL_PERSPECTIVES
 
 _PERSPECTIVE_ANALYZERS = {
-    "ingestion": IngestionAnalyzer(),
+    "manifest": ManifestAnalyzer(),
     "er": ERAnalyzer(),
-    "transformation": TransformationAnalyzer(),
-    "output": OutputAnalyzer(),
+    "dataflow": DataFlowAnalyzer(),
 }
 
 _MERMAID_GENERATORS = {
-    "ingestion": IngestionMermaidGenerator(),
+    "manifest": ManifestMermaidGenerator(),
     "er": ERMermaidGenerator(),
-    "transformation": TransformationMermaidGenerator(),
-    "output": OutputMermaidGenerator(),
+    "dataflow": DataFlowMermaidGenerator(),
 }
 
 
@@ -44,18 +50,28 @@ class ScanState:
     relationships: list[Relationship] = field(default_factory=list)
     diagram_data: dict[str, DiagramData] = field(default_factory=dict)
     mermaid_code: dict[str, str] = field(default_factory=dict)
+    requested_perspectives: list[str] = field(default_factory=list)
+    components: dict[str, list[str]] = field(default_factory=dict)
 
 
 class ScanOrchestrator:
-    """Orchestrates the full scan pipeline: clone → analyze → generate diagrams."""
+    """Orchestrates the full scan pipeline: clone -> analyze -> generate diagrams."""
 
     def __init__(self) -> None:
         self._scans: dict[str, ScanState] = {}
         self._repo_service = RepoService()
 
-    def start_scan(self, repo_url: str, branch: str) -> ScanResponse:
+    def start_scan(
+        self, repo_url: str, branch: str, perspectives: list[str] | None = None
+    ) -> ScanResponse:
         scan_id = generate_scan_id(repo_url, branch)
         now = datetime.now(timezone.utc)
+
+        # Validate and default perspectives
+        requested = list(perspectives) if perspectives else list(DEFAULT_PERSPECTIVES)
+        requested = [p for p in requested if p in ALL_PERSPECTIVES]
+        if not requested:
+            requested = list(DEFAULT_PERSPECTIVES)
 
         state = ScanState(
             scan_id=scan_id,
@@ -63,6 +79,7 @@ class ScanOrchestrator:
             repo_url=repo_url,
             branch=branch,
             created_at=now,
+            requested_perspectives=requested,
         )
         self._scans[scan_id] = state
 
@@ -80,6 +97,32 @@ class ScanOrchestrator:
                 all_entities.extend(entities)
                 all_relationships.extend(rels)
 
+            # Post-process: resolve cross-file relationship targets
+            name_to_id: dict[str, str] = {}
+            for e in all_entities:
+                if e.entity_type in ("class", "model"):
+                    name_to_id[e.name] = e.id
+
+            entity_ids = {e.id for e in all_entities}
+            resolved_rels: list[Relationship] = []
+            for r in all_relationships:
+                if r.target_id not in entity_ids:
+                    target_name = r.target_id.rsplit("::", 1)[-1] if "::" in r.target_id else ""
+                    if target_name in name_to_id:
+                        r = Relationship(
+                            source_id=r.source_id,
+                            target_id=name_to_id[target_name],
+                            relationship_type=r.relationship_type,
+                            metadata=r.metadata,
+                        )
+                        resolved_rels.append(r)
+                else:
+                    resolved_rels.append(r)
+            all_relationships = resolved_rels
+
+            # Detect components and inject metadata
+            state.components = detect_components(all_entities)
+
             state.entities = all_entities
             state.relationships = all_relationships
 
@@ -90,8 +133,11 @@ class ScanOrchestrator:
                 graph_service.store_entities(scan_id, all_entities)
                 graph_service.store_relationships(all_relationships)
 
-            # Run perspective analyzers and generators
-            for perspective in PERSPECTIVES:
+            # Run perspective analyzers in pipeline order
+            for perspective in requested:
+                if perspective not in _PERSPECTIVE_ANALYZERS:
+                    continue
+
                 # Try graph-powered perspective first, fallback to in-memory
                 diagram_data = None
                 if graph_service.is_available:
@@ -122,6 +168,8 @@ class ScanOrchestrator:
             repo_url=state.repo_url,
             branch=state.branch,
             created_at=state.created_at,
+            perspectives=state.requested_perspectives,
+            components=list(state.components.keys()),
         )
 
     def get_scan(self, scan_id: str) -> ScanState | None:
@@ -153,6 +201,8 @@ class ScanOrchestrator:
                 repo_url=s.repo_url,
                 branch=s.branch,
                 created_at=s.created_at,
+                perspectives=s.requested_perspectives,
+                components=list(s.components.keys()),
             )
             for s in self._scans.values()
         ]

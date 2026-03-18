@@ -108,7 +108,7 @@ function simplifyMermaidCode(code: string): string {
 
 /**
  * Truncate Mermaid code by keeping only the first N content lines.
- * Preserves the header and comment lines.
+ * Preserves the header and comment lines, and balances subgraphs and braces.
  */
 function truncateMermaidCode(code: string, maxLines = 60): string {
   const lines = code.split("\n");
@@ -117,9 +117,10 @@ function truncateMermaidCode(code: string, maxLines = 60): string {
   const header = lines[0];
   const contentLines = lines.slice(1);
 
-  // Keep subgraph structure intact: track open subgraphs
+  // Keep subgraph structure intact: track open subgraphs and braces
   const kept: string[] = [header];
   let openSubgraphs = 0;
+  let openBraces = 0;
   let contentCount = 0;
 
   for (const line of contentLines) {
@@ -146,16 +147,30 @@ function truncateMermaidCode(code: string, maxLines = 60): string {
       continue;
     }
 
+    // Keep track of braces for namespaces and classes
+    if (trimmed.endsWith("{")) {
+      openBraces++;
+    }
+    if (trimmed === "}" && openBraces > 0) {
+      openBraces--;
+      kept.push(line);
+      continue;
+    }
+
     if (contentCount < maxLines) {
       kept.push(line);
       contentCount++;
     }
   }
 
-  // Close any remaining open subgraphs
+  // Close any remaining open subgraphs and braces
   while (openSubgraphs > 0) {
     kept.push("    end");
     openSubgraphs--;
+  }
+  while (openBraces > 0) {
+    kept.push("    }");
+    openBraces--;
   }
 
   return kept.join("\n");

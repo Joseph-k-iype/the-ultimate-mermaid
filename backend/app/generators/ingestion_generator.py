@@ -56,10 +56,11 @@ class IngestionMermaidGenerator(MermaidGenerator):
         if truncated:
             lines.append(f"    %% Showing top {len(entities)} most-connected entities")
 
-        # Group entities by file_path for subgraphs
+        # Group entities by component (fall back to file_path)
         groups: dict[str, list[CodeEntity]] = defaultdict(list)
-        for entity in sorted(entities, key=lambda e: (e.file_path, e.name)):
-            groups[entity.file_path].append(entity)
+        for entity in sorted(entities, key=lambda e: (e.metadata.get("component", e.file_path), e.name)):
+            key = entity.metadata.get("component", entity.file_path)
+            groups[key].append(entity)
 
         entity_ids = {e.id for e in entities}
 

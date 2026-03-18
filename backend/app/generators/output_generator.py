@@ -80,10 +80,11 @@ class OutputMermaidGenerator(MermaidGenerator):
 
         entity_map: dict[str, CodeEntity] = {e.id: e for e in entities}
 
-        # Group entities by output type for subgraphs
+        # Group entities by component (fall back to entity_type)
         groups: dict[str, list[CodeEntity]] = defaultdict(list)
-        for entity in sorted(entities, key=lambda e: (e.entity_type, e.name)):
-            groups[entity.entity_type].append(entity)
+        for entity in sorted(entities, key=lambda e: (e.metadata.get("component", e.entity_type), e.name)):
+            key = entity.metadata.get("component", entity.entity_type)
+            groups[key].append(entity)
 
         for etype in sorted(groups.keys()):
             subgraph_id = self.sanitize_id(etype)
