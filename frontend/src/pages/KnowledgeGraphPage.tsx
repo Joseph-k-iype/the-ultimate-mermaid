@@ -1,9 +1,11 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import gsap from "gsap";
 import { api } from "../api/client";
 import FlowGraph from "../components/FlowGraph";
 
 export default function KnowledgeGraphPage() {
+  const pageRef = useRef<HTMLDivElement>(null);
   const [scanId, setScanId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -23,6 +25,16 @@ export default function KnowledgeGraphPage() {
       setScanId(scans[0].scan_id);
     }
   }, [scans, scanId]);
+
+  useEffect(() => {
+    if (pageRef.current) {
+      gsap.fromTo(
+        pageRef.current.children,
+        { opacity: 0, y: 12 },
+        { opacity: 1, y: 0, duration: 0.4, stagger: 0.08, ease: "power2.out" }
+      );
+    }
+  }, []);
 
   // Only fetch when we have a scan selected
   const { data: graphData, isLoading } = useQuery({
@@ -75,7 +87,7 @@ export default function KnowledgeGraphPage() {
   }
 
   return (
-    <div className="flex flex-col" style={{ height: "calc(100vh - 100px)" }}>
+    <div ref={pageRef} className="flex flex-col" style={{ height: "calc(100vh - 80px)" }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3 flex-shrink-0">
         <div>
@@ -103,7 +115,7 @@ export default function KnowledgeGraphPage() {
       </div>
 
       {/* Controls */}
-      <div className="bg-white border border-stone-200 rounded-xl p-3 mb-3 flex-shrink-0">
+      <div className="bg-white border border-stone-200/60 rounded-2xl p-3 mb-3 flex-shrink-0 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <label className="text-xs text-stone-400 whitespace-nowrap">Repository:</label>
@@ -142,7 +154,6 @@ export default function KnowledgeGraphPage() {
           edges={filteredEdges}
           isLoading={isLoading || !scanId}
           height="100%"
-          maxNodes={300}
           direction="RIGHT"
           showDirectionToggle={true}
           showMiniMap={true}

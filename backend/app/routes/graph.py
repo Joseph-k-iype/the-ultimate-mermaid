@@ -45,7 +45,7 @@ def get_knowledge_graph(scan_id: str = Query(..., description="Scan ID to visual
         state = orchestrator.get_scan(scan_id)
         if state is not None:
             node_set: set[str] = set()
-            for e in state.entities[:500]:
+            for e in state.entities[:5000]:
                 if e.id not in node_set:
                     node_set.add(e.id)
                     nodes.append(GraphNode(

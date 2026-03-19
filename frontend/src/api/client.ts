@@ -1,3 +1,5 @@
+import type { AgentRunResult } from "../types/agents";
+
 const BASE_URL = "http://localhost:8000/api";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -316,4 +318,14 @@ export const api = {
     request<{ results: PatternListItem[]; total: number }>(
       `/graph/patterns/${patternId}/related`
     ),
+
+  // Agent Analysis
+  triggerAgentAnalysis: (scanId: string) =>
+    request<AgentRunResult>(`/agents/analyze/${scanId}`, { method: "POST" }),
+
+  getAgentInsights: (scanId: string) =>
+    request<AgentRunResult>(`/agents/insights/${scanId}`),
+
+  getAgentInsightsByCategory: (scanId: string, category: string) =>
+    request<AgentRunResult>(`/agents/insights/${scanId}/${category}`),
 };

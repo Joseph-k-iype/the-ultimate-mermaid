@@ -290,8 +290,8 @@ export default function DiagramTabs({ scanId, perspectives, components }: Diagra
           nodes={graphData?.nodes || []}
           edges={graphData?.edges || []}
           isLoading={graphLoading}
-          height="550px"
-          maxNodes={150}
+          height="680px"
+          maxNodes={5000}
           direction={activeTab.direction}
           showDirectionToggle={true}
           showMiniMap={true}

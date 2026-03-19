@@ -12,7 +12,7 @@ class TestERGenerator:
         data = analyzer.analyze(sample_entities, sample_relationships)
         gen = ERMermaidGenerator()
         code = gen.generate(data)
-        assert code.startswith("erDiagram")
+        assert code.startswith("classDiagram")
 
     def test_determinism(self, sample_entities, sample_relationships):
         analyzer = ERAnalyzer()

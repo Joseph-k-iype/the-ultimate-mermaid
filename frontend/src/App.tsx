@@ -14,39 +14,39 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <div className="min-h-screen bg-stone-50">
-          <nav className="bg-white border-b border-stone-200">
-            <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-6">
-              <Link to="/" className="text-lg font-bold text-stone-900 tracking-tight">
-                PatternViz
+        <div className="min-h-screen bg-stone-50/50">
+          <nav className="bg-white/80 backdrop-blur-xl border-b border-stone-200/50 sticky top-0 z-50">
+            <div className="max-w-7xl mx-auto px-6 py-3.5 flex items-center gap-8">
+              <Link to="/" className="text-lg font-bold text-stone-900 tracking-tighter">
+                Pattern<span className="text-stone-400">Viz</span>
               </Link>
               <Link
                 to="/"
-                className="text-sm text-stone-500 hover:text-stone-900"
+                className="text-[13px] font-medium text-stone-500 hover:text-stone-900 transition-colors duration-200"
               >
                 Dashboard
               </Link>
               <Link
                 to="/templates"
-                className="text-sm text-stone-500 hover:text-stone-900"
+                className="text-[13px] font-medium text-stone-500 hover:text-stone-900 transition-colors duration-200"
               >
                 Templates
               </Link>
               <Link
                 to="/patterns"
-                className="text-sm text-stone-500 hover:text-stone-900"
+                className="text-[13px] font-medium text-stone-500 hover:text-stone-900 transition-colors duration-200"
               >
                 Pattern Library
               </Link>
               <Link
                 to="/knowledge-graph"
-                className="text-sm text-stone-500 hover:text-stone-900"
+                className="text-[13px] font-medium text-stone-500 hover:text-stone-900 transition-colors duration-200"
               >
                 Knowledge Graph
               </Link>
             </div>
           </nav>
-          <main className="py-8 px-4">
+          <main className="py-6 px-6">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/scan/:scanId" element={<DiagramPage />} />

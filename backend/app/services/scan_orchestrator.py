@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+import logging
+
 from app.analyzers.component_detector import detect_components
 from app.analyzers.dataflow_analyzer import DataFlowAnalyzer
 from app.analyzers.er_analyzer import ERAnalyzer
@@ -12,8 +14,11 @@ from app.generators.er_generator import ERMermaidGenerator
 from app.generators.manifest_generator import ManifestMermaidGenerator
 from app.models.domain import CodeEntity, DiagramData, Relationship
 from app.models.responses import DiagramResponse, ScanResponse
+from app.config import settings
 from app.services.repo_service import RepoService
 from app.utils.determinism import generate_scan_id
+
+logger = logging.getLogger(__name__)
 
 # Pipeline order matters: manifest → er → dataflow.
 # Each stage builds on the previous conceptually:
@@ -52,6 +57,7 @@ class ScanState:
     mermaid_code: dict[str, str] = field(default_factory=dict)
     requested_perspectives: list[str] = field(default_factory=list)
     components: dict[str, list[str]] = field(default_factory=dict)
+    agent_insights: dict = field(default_factory=dict)
 
 
 class ScanOrchestrator:
@@ -155,6 +161,17 @@ class ScanOrchestrator:
                 state.mermaid_code[perspective] = generator.generate(diagram_data)
 
             state.status = "completed"
+
+            # Agent enrichment (additive -- scan still succeeds if this fails)
+            if settings.ENABLE_AGENTS:
+                try:
+                    from app.agents.orchestration import agent_orchestration
+
+                    result = agent_orchestration.analyze(state)
+                    state.agent_insights = result.model_dump()
+                except Exception as agent_exc:
+                    logger.warning(f"Agent enrichment failed: {agent_exc}")
+
         except Exception as exc:
             state.status = "failed"
             state.mermaid_code["error"] = str(exc)
@@ -170,6 +187,7 @@ class ScanOrchestrator:
             created_at=state.created_at,
             perspectives=state.requested_perspectives,
             components=list(state.components.keys()),
+            agent_insights=state.agent_insights or None,
         )
 
     def get_scan(self, scan_id: str) -> ScanState | None:

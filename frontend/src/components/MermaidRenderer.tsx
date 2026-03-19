@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import mermaid from "mermaid";
 
 mermaid.initialize({
@@ -180,11 +180,43 @@ export default function MermaidRenderer({ code }: { code: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryLevel, setRetryLevel] = useState(0);
+  const [scale, setScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setScale(s => Math.min(Math.max(s * delta, 0.1), 5));
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 0) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - translate.x, y: e.clientY - translate.y });
+    }
+  }, [translate]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isPanning) {
+      setTranslate({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+    }
+  }, [isPanning, panStart]);
+
+  const handleMouseUp = useCallback(() => setIsPanning(false), []);
+
+  const resetView = useCallback(() => {
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
+  }, []);
 
   useEffect(() => {
     if (!code || !containerRef.current) return;
     setError(null);
     setRetryLevel(0);
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
 
     const tryRender = async (
       mermaidCode: string,
@@ -263,7 +295,41 @@ export default function MermaidRenderer({ code }: { code: string }) {
             : "Diagram was auto-corrected for rendering compatibility"}
         </p>
       )}
-      <div ref={containerRef} className="overflow-auto" />
+      <div className="relative border border-stone-200 rounded-xl overflow-hidden bg-white">
+        {/* Toolbar */}
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-white/95 border border-stone-200 rounded-lg shadow-sm p-1">
+          <button onClick={() => setScale(s => Math.min(s * 1.2, 5))} className="p-1.5 rounded hover:bg-stone-100 text-stone-500" title="Zoom In">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <span className="text-[10px] text-stone-400 w-8 text-center">{Math.round(scale * 100)}%</span>
+          <button onClick={() => setScale(s => Math.max(s * 0.8, 0.1))} className="p-1.5 rounded hover:bg-stone-100 text-stone-500" title="Zoom Out">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <div className="w-px h-4 bg-stone-200 mx-0.5" />
+          <button onClick={resetView} className="p-1.5 rounded hover:bg-stone-100 text-stone-500 text-[10px] font-medium" title="Reset View">
+            Fit
+          </button>
+        </div>
+        {/* Pannable/zoomable container */}
+        <div
+          className="overflow-hidden cursor-grab active:cursor-grabbing"
+          style={{ height: "500px" }}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        >
+          <div
+            ref={containerRef}
+            style={{
+              transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+              transformOrigin: "0 0",
+              transition: isPanning ? "none" : "transform 0.1s ease",
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
 }

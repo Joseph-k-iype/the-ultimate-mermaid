@@ -404,26 +404,29 @@ class GraphService:
     # --- Knowledge graph visualization ---
 
     def get_knowledge_graph(self, scan_id: str) -> dict:
-        """Returns {nodes, edges} for a specific scan. Caps at 500 nodes."""
+        """Returns {nodes, edges} for a specific scan. Caps at 5000 nodes."""
         if not self._available:
             return {"nodes": [], "edges": []}
 
         node_result = self._query(
             "MATCH (e:CodeEntity)-[:BELONGS_TO_SCAN]->(s:Scan {id: $scan_id}) "
-            "RETURN e.id, e.name, e.entity_type, 'CodeEntity' AS label "
-            "LIMIT 500",
+            "RETURN e.id, e.name, e.entity_type, 'CodeEntity' AS label, e.component "
+            "LIMIT 5000",
             {"scan_id": scan_id},
         )
 
         nodes = []
         if node_result is not None:
             for row in node_result.result_set:
-                nid, name, ntype, label = row
+                nid, name, ntype, label, comp = row
                 nodes.append({
                     "id": nid,
                     "label": name or nid,
                     "type": label,
-                    "properties": {"entity_type": ntype},
+                    "properties": {
+                        "entity_type": ntype,
+                        "component": comp or ""
+                    },
                 })
 
         node_ids = [n["id"] for n in nodes]
@@ -434,7 +437,7 @@ class GraphService:
                 "MATCH (a)-[r]->(b) "
                 "WHERE a.id IN $ids AND b.id IN $ids "
                 "RETURN a.id, b.id, type(r) "
-                "LIMIT 2000",
+                "LIMIT 10000",
                 {"ids": node_ids},
             )
             if edge_result is not None:

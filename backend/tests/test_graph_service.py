@@ -105,11 +105,11 @@ class TestWithMockedGraph:
         assert found
 
     def test_query_perspective_returns_diagram_data(self, connected_service):
-        # Mock entity results
+        # Mock entity results (includes component column)
         entity_result = MagicMock()
         entity_result.result_set = [
-            ("id1", "MyClass", "class", "app.py", 1),
-            ("id2", "MyModel", "model", "app.py", 10),
+            ("id1", "MyClass", "class", "app.py", 1, "services"),
+            ("id2", "MyModel", "model", "app.py", 10, "models"),
         ]
         rel_result = MagicMock()
         rel_result.result_set = [
@@ -153,7 +153,7 @@ class TestWithMockedGraph:
     def test_get_knowledge_graph_with_scan_id(self, connected_service):
         node_result = MagicMock()
         node_result.result_set = [
-            ("id1", "MyClass", "class", "CodeEntity"),
+            ("id1", "MyClass", "class", "CodeEntity", "services"),
         ]
         edge_result = MagicMock()
         edge_result.result_set = []

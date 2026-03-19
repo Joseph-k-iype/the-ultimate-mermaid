@@ -35,8 +35,8 @@ class TestEndToEndTracing:
         # All four nodes are on the entry→exit path
         assert node_ids == {"e1", "f1", "f2", "db1"}
 
-    def test_dead_end_branch_excluded(self, analyzer):
-        """A node reachable from entry but not leading to exit is excluded."""
+    def test_dead_end_branch_included(self, analyzer):
+        """A node reachable from entry is included even if it does not lead to exit."""
         entities = [
             _entity("e1", "GET /users", "endpoint"),
             _entity("f1", "get_users", "function"),
@@ -50,10 +50,8 @@ class TestEndToEndTracing:
         ]
         result = analyzer.analyze(entities, relationships)
         node_ids = {n.id for n in result.flow_nodes}
-        assert "f2" not in node_ids  # dead end excluded
-        assert "e1" in node_ids
-        assert "f1" in node_ids
-        assert "db1" in node_ids
+        # All relationship participants are included
+        assert node_ids == {"e1", "f1", "f2", "db1"}
 
     def test_multiple_relationship_types(self, analyzer):
         """All data-movement relationship types are traversed."""

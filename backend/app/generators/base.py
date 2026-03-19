@@ -7,7 +7,7 @@ from app.models.domain import CodeEntity, DiagramData, Relationship
 
 # Maximum entities to include in a single Mermaid diagram.
 # Beyond this, Mermaid's browser renderer hits text-size or parse limits.
-MAX_ENTITIES = 80
+MAX_ENTITIES = 2000
 
 
 class MermaidGenerator(ABC):

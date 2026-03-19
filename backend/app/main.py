@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.graph import graph_service
-from app.routes import graph_router, pattern_router, scan_router, template_router
+from app.routes import agents_router, graph_router, pattern_router, scan_router, template_router
 
 
 @asynccontextmanager
@@ -51,3 +51,4 @@ app.include_router(scan_router, prefix="/api")
 app.include_router(template_router, prefix="/api")
 app.include_router(pattern_router, prefix="/api")
 app.include_router(graph_router, prefix="/api")
+app.include_router(agents_router, prefix="/api")

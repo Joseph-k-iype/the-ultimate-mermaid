@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     FALKORDB_GRAPH: str = "patternviz"
     FALKORDB_ENABLED: bool = True
 
+    # Multi-agent AI analysis (optional)
+    ENABLE_AGENTS: bool = False
+
     model_config = {"env_prefix": "PATTERNVIZ_", "env_file": ".env", "extra": "ignore"}
 
 

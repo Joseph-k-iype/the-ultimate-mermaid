@@ -11,6 +11,7 @@ class ScanResponse(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     perspectives: list[str] = Field(default_factory=list)
     components: list[str] = Field(default_factory=list)
+    agent_insights: dict | None = None
 
 
 class DiagramResponse(BaseModel):
